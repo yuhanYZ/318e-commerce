@@ -27,6 +27,7 @@ Each microservice module is structured into four distinct layers:
 - Cross-service coordination (e.g., Order Service calling Inventory Service to check stock)
 
 #### Domain Layer(Core Domain Models & Rules)**************
+（The Domain layer contains pure business logic only — no infrastructure concerns, no external calls. It's where our core business rules and invariants live. ）
 
 #### **Infrastructure Layer** (Repositories, Kafka Producers/Consumers, LLM Clients) 
 
