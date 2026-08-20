@@ -48,7 +48,7 @@ The project is structured as a multi-module repository:
 
 ## Technology Stack
 
-- **JDK & Build**: Java 21, Apache Maven (Multi-module POM)
+- **JDK & Build**: Java 21, Apache Maven (Multi-module Project Object Model)
 
 - **Framework**: Spring Boot
 
@@ -57,7 +57,7 @@ The project is structured as a multi-module repository:
   - **Domain Layer**: `@Entity`
   - **Data Access Layer**: `@Repository`
 
-- **Database**: H2 in-memory database for development
+- **Database**: H2 in-memory database for development////（postgresql）
 
 - **Messaging**: Apache Kafka (event-driven inter-service communication)
 
