@@ -1,0 +1,59 @@
+server:
+  port: 8084
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: inventory-service
+  datasource:
+    url: jdbc:h2:mem:inventoryservice;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        max.block.ms: 2000 # fail fast instead of blocking ~60s when no broker is running yet (see InventoryEventPublisher)
+        # Alias -> class name, mirroring order-service's application.yml - other services deserialize
+        # the same alias into their OWN local copy of the event class (separate Maven modules, no
+        # shared dependency), so both sides only need to agree on the alias string, not the package.
+        spring.json.type.mapping: "stock-updated:com.ecommerce.inventoryservice.event.StockUpdatedEvent,stock-reservation-failed:com.ecommerce.inventoryservice.event.StockReservationFailedEvent"
+    consumer:
+      group-id: inventory-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.ecommerce.inventoryservice.event"
+        spring.json.type.mapping: "order-created:com.ecommerce.inventoryservice.event.OrderCreatedEvent,order-cancelled:com.ecommerce.inventoryservice.event.OrderCancelledEvent,payment-failed:com.ecommerce.inventoryservice.event.PaymentFailedEvent"
+
+# MUST be identical to user-service's app.jwt.secret - all services validate tokens
+# signed with the same key. In a real deployment this would come from a shared
+# secret store / environment variable, not be duplicated in source per service.
+app:
+  jwt:
+    secret: "kQbfTYJzlIoUnLQQ7pah1+LRq3mUgOznZW7FQdpUwvbRh2BI1cIpDIAY9k5gn8TK"
+  inventory:
+    # specs/3-domain-models.md section 5.1 flags "global vs per-product threshold" as
+    # an open question; resolved as per-StockItem (see StockItem.lowStockThreshold),
+    # defaulted from this value whenever a StockItem is first created (I3).
+    default-low-stock-threshold: 10
+
+logging:
+  level:
+    com.ecommerce.inventoryservice: INFO
+    org.apache.kafka: ERROR       # silence background broker-connection retry noise; no broker exists yet
+    org.springframework.kafka: WARN
