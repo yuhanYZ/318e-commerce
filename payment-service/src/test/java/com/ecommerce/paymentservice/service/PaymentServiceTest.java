@@ -31,6 +31,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -61,11 +62,11 @@ class PaymentServiceTest {
     void payForOrder_success_publishesConfirmedAndReturnsSuccess() {
         OrderInfo order = new OrderInfo("ORD-1", "USR-1", "PENDING", new BigDecimal("39.98"),
                 List.of(new OrderItemInfo("PRD-1", 2)));
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(order));
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(order));
         when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var response = paymentService.payForOrder("USR-1",
-                new PaymentRequest("ORD-1", new BigDecimal("39.98"), "VISA_TEST"));
+                new PaymentRequest("ORD-1", new BigDecimal("39.98"), "VISA_TEST"), "Bearer test-token");
 
         assertThat(response.getStatus()).isEqualTo("SUCCESS");
         verify(paymentEventPublisher).publishPaymentConfirmed(argThat(e -> e.getOrderId().equals("ORD-1")));
@@ -75,11 +76,11 @@ class PaymentServiceTest {
     @Test
     void payForOrder_declineTrigger_publishesFailedAndReturnsFailed() {
         OrderInfo order = new OrderInfo("ORD-1", "USR-1", "PENDING", new BigDecimal("10.00"), List.of());
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(order));
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(order));
         when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var response = paymentService.payForOrder("USR-1",
-                new PaymentRequest("ORD-1", new BigDecimal("10.00"), DECLINE_TRIGGER));
+                new PaymentRequest("ORD-1", new BigDecimal("10.00"), DECLINE_TRIGGER), "Bearer test-token");
 
         assertThat(response.getStatus()).isEqualTo("FAILED");
         verify(paymentEventPublisher).publishPaymentFailed(any());
@@ -89,11 +90,11 @@ class PaymentServiceTest {
     @Test
     void payForOrder_amountMismatch_publishesFailedAndReturnsFailed() {
         OrderInfo order = new OrderInfo("ORD-1", "USR-1", "PENDING", new BigDecimal("39.98"), List.of());
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(order));
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(order));
         when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         var response = paymentService.payForOrder("USR-1",
-                new PaymentRequest("ORD-1", new BigDecimal("10.00"), "VISA_TEST"));
+                new PaymentRequest("ORD-1", new BigDecimal("10.00"), "VISA_TEST"), "Bearer test-token");
 
         assertThat(response.getStatus()).isEqualTo("FAILED");
         verify(paymentEventPublisher).publishPaymentFailed(any());
@@ -101,10 +102,10 @@ class PaymentServiceTest {
 
     @Test
     void payForOrder_orderNotFound_throwsOrderNotPayable() {
-        when(orderClient.getOrder("missing")).thenReturn(Optional.empty());
+        when(orderClient.getOrder("missing", anyString())).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> paymentService.payForOrder("USR-1",
-                new PaymentRequest("missing", BigDecimal.TEN, "VISA_TEST")))
+                new PaymentRequest("missing", BigDecimal.TEN, "VISA_TEST"), "Bearer test-token"))
                 .isInstanceOf(OrderNotPayableException.class);
         verify(paymentRepository, never()).save(any());
     }
@@ -112,10 +113,10 @@ class PaymentServiceTest {
     @Test
     void payForOrder_orderNotPending_throwsOrderNotPayable() {
         OrderInfo order = new OrderInfo("ORD-1", "USR-1", "PAID", BigDecimal.TEN, List.of());
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(order));
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.payForOrder("USR-1",
-                new PaymentRequest("ORD-1", BigDecimal.TEN, "VISA_TEST")))
+                new PaymentRequest("ORD-1", BigDecimal.TEN, "VISA_TEST"), "Bearer test-token"))
                 .isInstanceOf(OrderNotPayableException.class);
         verify(paymentRepository, never()).save(any());
     }
@@ -123,10 +124,10 @@ class PaymentServiceTest {
     @Test
     void payForOrder_notOwner_throwsAccessDenied() {
         OrderInfo order = new OrderInfo("ORD-1", "SOMEONE-ELSE", "PENDING", BigDecimal.TEN, List.of());
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(order));
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(order));
 
         assertThatThrownBy(() -> paymentService.payForOrder("USR-1",
-                new PaymentRequest("ORD-1", BigDecimal.TEN, "VISA_TEST")))
+                new PaymentRequest("ORD-1", BigDecimal.TEN, "VISA_TEST"), "Bearer test-token"))
                 .isInstanceOf(OrderAccessDeniedException.class);
         verify(paymentRepository, never()).save(any());
     }
@@ -136,10 +137,10 @@ class PaymentServiceTest {
         Payment payment = Payment.builder().id("PAY-1").orderId("ORD-1")
                 .amount(BigDecimal.TEN).status(PaymentStatus.SUCCESS).method("VISA_TEST").build();
         when(paymentRepository.findByOrderId("ORD-1")).thenReturn(Optional.of(payment));
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-1", "SOMEONE-ELSE", "PAID", BigDecimal.TEN, List.of())));
 
-        assertThatThrownBy(() -> paymentService.getPaymentByOrderId("USR-1", "ORD-1"))
+        assertThatThrownBy(() -> paymentService.getPaymentByOrderId("USR-1", "ORD-1", "Bearer test-token"))
                 .isInstanceOf(OrderAccessDeniedException.class);
     }
 
@@ -147,7 +148,7 @@ class PaymentServiceTest {
     void getPaymentByOrderId_noPayment_throwsPaymentNotFound() {
         when(paymentRepository.findByOrderId("missing")).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> paymentService.getPaymentByOrderId("USR-1", "missing"))
+        assertThatThrownBy(() -> paymentService.getPaymentByOrderId("USR-1", "missing", "Bearer test-token"))
                 .isInstanceOf(PaymentNotFoundException.class);
     }
 
@@ -156,12 +157,12 @@ class PaymentServiceTest {
         Payment payment = Payment.builder().id("PAY-1").orderId("ORD-1")
                 .amount(new BigDecimal("50.00")).status(PaymentStatus.SUCCESS).method("VISA_TEST").build();
         when(paymentRepository.findById("PAY-1")).thenReturn(Optional.of(payment));
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-1", "USR-1", "CANCELLED", new BigDecimal("50.00"), List.of())));
         when(refundRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(paymentRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        RefundResponse response = paymentService.requestRefund("USR-1", "PAY-1", new RefundRequest(new BigDecimal("20.00")));
+        RefundResponse response = paymentService.requestRefund("USR-1", "PAY-1", new RefundRequest(new BigDecimal("20.00")), "Bearer test-token");
 
         assertThat(response.getStatus()).isEqualTo("PROCESSED");
         assertThat(payment.getStatus()).isEqualTo(PaymentStatus.REFUNDED);
@@ -173,11 +174,11 @@ class PaymentServiceTest {
         Payment payment = Payment.builder().id("PAY-1").orderId("ORD-1")
                 .amount(new BigDecimal("50.00")).status(PaymentStatus.SUCCESS).method("VISA_TEST").build();
         when(paymentRepository.findById("PAY-1")).thenReturn(Optional.of(payment));
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-1", "USR-1", "PAID", new BigDecimal("50.00"), List.of())));
         when(refundRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> paymentService.requestRefund("USR-1", "PAY-1", new RefundRequest(new BigDecimal("50.00"))))
+        assertThatThrownBy(() -> paymentService.requestRefund("USR-1", "PAY-1", new RefundRequest(new BigDecimal("50.00")), "Bearer test-token"))
                 .isInstanceOf(RefundNotEligibleException.class);
 
         verify(refundRepository).save(argThat(r -> r.getStatus() == RefundStatus.REJECTED));
@@ -190,11 +191,11 @@ class PaymentServiceTest {
         Payment payment = Payment.builder().id("PAY-1").orderId("ORD-1")
                 .amount(new BigDecimal("50.00")).status(PaymentStatus.SUCCESS).method("VISA_TEST").build();
         when(paymentRepository.findById("PAY-1")).thenReturn(Optional.of(payment));
-        when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(
+        when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-1", "USR-1", "CANCELLED", new BigDecimal("50.00"), List.of())));
         when(refundRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
-        assertThatThrownBy(() -> paymentService.requestRefund("USR-1", "PAY-1", new RefundRequest(new BigDecimal("999.00"))))
+        assertThatThrownBy(() -> paymentService.requestRefund("USR-1", "PAY-1", new RefundRequest(new BigDecimal("999.00")), "Bearer test-token"))
                 .isInstanceOf(RefundNotEligibleException.class);
 
         verify(refundRepository).save(argThat((Refund r) -> r.getStatus() == RefundStatus.REJECTED));

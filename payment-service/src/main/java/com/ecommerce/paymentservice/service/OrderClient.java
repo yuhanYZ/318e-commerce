@@ -5,6 +5,9 @@ import com.ecommerce.paymentservice.exception.OrderServiceUnavailableException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
@@ -23,6 +26,18 @@ import java.util.Optional;
  * default. A 404 from Order Service is returned as an empty Optional rather
  * than an exception, since what a "missing order" means differs by caller
  * (PAY1 turns it into 409 per the contract; PAY2/PAY3 have their own needs).
+ * <p>
+ * Unlike order-service's own InventoryClient/ProductClient (which call public,
+ * unauthenticated endpoints - I1 and P2 both permitAll), order-service's
+ * SecurityConfig requires a valid bearer token on EVERY /orders/** endpoint,
+ * including GET /orders/{id} - there is no equivalent public read endpoint
+ * there. So this call must forward the caller's own token, or order-service
+ * rejects it with 401 (which falls into the generic RestClientException
+ * branch below and surfaces here as a misleading 503). Forwarding the same
+ * token the customer already presented to Payment Service is safe: every
+ * service validates independently against the same shared app.jwt.secret, and
+ * the token being forwarded belongs to the same user this request is already
+ * acting as.
  */
 @Component
 @Slf4j
@@ -38,9 +53,14 @@ public class OrderClient {
         this.baseUrl = baseUrl;
     }
 
-    public Optional<OrderInfo> getOrder(String orderId) {
+    public Optional<OrderInfo> getOrder(String orderId, String authorizationHeader) {
         try {
-            OrderInfo response = restTemplate.getForObject(baseUrl + "/orders/{id}", OrderInfo.class, orderId);
+            HttpHeaders headers = new HttpHeaders();
+            headers.set(HttpHeaders.AUTHORIZATION, authorizationHeader);
+            HttpEntity<Void> requestEntity = new HttpEntity<>(headers);
+
+            OrderInfo response = restTemplate.exchange(
+                    baseUrl + "/orders/{id}", HttpMethod.GET, requestEntity, OrderInfo.class, orderId).getBody();
             return Optional.ofNullable(response);
         } catch (HttpClientErrorException.NotFound ex) {
             return Optional.empty();

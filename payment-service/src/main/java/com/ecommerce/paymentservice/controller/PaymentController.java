@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -26,6 +27,12 @@ import org.springframework.web.bind.annotation.RestController;
  * Every @RequestParam/@PathVariable below is explicitly named, even though the
  * parent pom sets the -parameters compiler flag project-wide - defense in
  * depth against the bug that broke product-service's tests earlier.
+ * <p>
+ * PAY1-PAY3 also forward the caller's raw Authorization header value into
+ * PaymentService, which passes it on to OrderClient - see OrderClient's
+ * javadoc for why calls to Order Service need the caller's own token
+ * (Authentication here only exposes the parsed principal, not the raw token
+ * string, so the header is read directly).
  */
 @RestController
 @RequestMapping("/payments")
@@ -38,9 +45,10 @@ public class PaymentController {
     @PostMapping
     public ResponseEntity<PaymentResponse> payForOrder(
             Authentication authentication,
+            @RequestHeader("Authorization") String authorizationHeader,
             @Valid @RequestBody PaymentRequest request) {
         String userId = (String) authentication.getPrincipal();
-        PaymentResponse response = paymentService.payForOrder(userId, request);
+        PaymentResponse response = paymentService.payForOrder(userId, request, authorizationHeader);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
@@ -48,19 +56,21 @@ public class PaymentController {
     @GetMapping("/order/{orderId}")
     public ResponseEntity<PaymentResponse> getPaymentByOrderId(
             Authentication authentication,
+            @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable(name = "orderId") String orderId) {
         String userId = (String) authentication.getPrincipal();
-        return ResponseEntity.ok(paymentService.getPaymentByOrderId(userId, orderId));
+        return ResponseEntity.ok(paymentService.getPaymentByOrderId(userId, orderId, authorizationHeader));
     }
 
     /** PAY3. */
     @PostMapping("/{id}/refund")
     public ResponseEntity<RefundResponse> requestRefund(
             Authentication authentication,
+            @RequestHeader("Authorization") String authorizationHeader,
             @PathVariable(name = "id") String id,
             @Valid @RequestBody RefundRequest request) {
         String userId = (String) authentication.getPrincipal();
-        RefundResponse response = paymentService.requestRefund(userId, id, request);
+        RefundResponse response = paymentService.requestRefund(userId, id, request, authorizationHeader);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 

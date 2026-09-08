@@ -1,0 +1,36 @@
+server:
+  port: 8082
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: product-service
+  datasource:
+    url: jdbc:h2:mem:productservice;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+# MUST be identical to user-service's app.jwt.secret - both services validate tokens
+# signed with the same key. In a real deployment this would come from a shared
+# secret store / environment variable, not be duplicated in source per service.
+app:
+  jwt:
+    secret: "kQbfTYJzlIoUnLQQ7pah1+LRq3mUgOznZW7FQdpUwvbRh2BI1cIpDIAY9k5gn8TK"
+  services:
+    inventory-service:
+      base-url: http://localhost:8084/api/v1
+
+logging:
+  level:
+    com.ecommerce.productservice: INFO

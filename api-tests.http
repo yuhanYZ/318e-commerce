@@ -1,0 +1,210 @@
+### 318 E-Commerce - End-to-End API walkthrough (IntelliJ HTTP Client)
+#
+# How to use this file:
+#   - Each block starting with "###" is one request. Click the green run
+#     triangle in the gutter next to a request's method line (POST/GET/...)
+#     to send just that one request - or use the "Run All Requests in File"
+#     button at the top of the editor to run them in order automatically.
+#   - Requests are numbered and MUST be run top-to-bottom the first time:
+#     each one captures a value (token, id) into a variable with the
+#     "> {% client.global.set(...) %}" script block below it, and later
+#     requests reference that variable as {{variableName}}.
+#   - Re-running from the top is safe except: user registration (#5) will
+#     fail with 409 on a second run (email already exists) - either change
+#     the email in #5, or just skip #5/#6 and reuse a token from an earlier
+#     run (client.global variables persist across runs in the same IDE
+#     session, viewable via the "environment" icon in the HTTP Client tool
+#     window).
+#   - Needs all five services running (ports 8081-8085) AND Kafka up via
+#     `docker compose up -d` - #9/#12 specifically only pass once Kafka is
+#     actually delivering events between order-service/inventory-service/
+#     payment-service. Watch http://localhost:8090 (kafka-ui) while running
+#     this to see "order-created", "stock-updated" etc. messages arrive live.
+
+### 1. Login as the seeded admin (see AdminAccountInitializer)
+POST http://localhost:8081/api/v1/users/login
+Content-Type: application/json
+
+{
+  "email": "admin@318ecommerce.local",
+  "password": "Admin@12345"
+}
+
+> {%
+    client.test("login succeeded", () => response.status === 200);
+    client.global.set("adminToken", response.body.token);
+%}
+
+### 2. Create a product as admin (P4) - needed before we can place an order for it
+POST http://localhost:8082/api/v1/products
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "name": "Mechanical Keyboard",
+  "description": "End-to-end test product",
+  "price": 79.99,
+  "categoryId": "CAT-ELECTRONICS"
+}
+
+> {%
+    client.test("product created", () => response.status === 201);
+    client.global.set("productId", response.body.id);
+%}
+
+### 3. Give it stock as admin (I3) - auto-creates the StockItem since none exists yet
+POST http://localhost:8084/api/v1/inventory/{{productId}}/adjust
+Content-Type: application/json
+Authorization: Bearer {{adminToken}}
+
+{
+  "delta": 50,
+  "reason": "Initial stock for e2e test"
+}
+
+> {%
+    client.test("stock adjusted", () => response.status === 200);
+    client.test("quantity is 50", () => response.body.quantityAvailable === 50);
+%}
+
+### 4. Sanity check: stock is visible via I1 (no auth needed)
+GET http://localhost:8084/api/v1/inventory/{{productId}}
+
+### 5. Register a customer account (U1) - change the email if re-running this file
+POST http://localhost:8081/api/v1/users/register
+Content-Type: application/json
+
+{
+  "email": "e2e-customer@test.local",
+  "password": "Customer@123"
+}
+
+### 6. Login as that customer (U2)
+POST http://localhost:8081/api/v1/users/login
+Content-Type: application/json
+
+{
+  "email": "e2e-customer@test.local",
+  "password": "Customer@123"
+}
+
+> {%
+    client.test("login succeeded", () => response.status === 200);
+    client.global.set("customerToken", response.body.token);
+%}
+
+### 7. Browse products as a sanity check (P1, no auth needed)
+GET http://localhost:8082/api/v1/products?page=0&size=20
+
+### 8. Place an order for 2 units (O1) - this publishes OrderCreatedEvent to Kafka
+POST http://localhost:8083/api/v1/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "items": [
+    { "productId": "{{productId}}", "quantity": 2 }
+  ]
+}
+
+> {%
+    client.test("order created", () => response.status === 201);
+    client.test("status is PENDING", () => response.body.status === "PENDING");
+    client.global.set("orderId", response.body.id);
+%}
+
+### 9. Check stock again (I1) - should now read 48 once inventory-service has
+### consumed OrderCreatedEvent from Kafka. If this still shows 50, wait a
+### second and re-run just this request - Kafka delivery isn't instant.
+GET http://localhost:8084/api/v1/inventory/{{productId}}
+
+### 10. Pay for the order (PAY1) - any method value except MOCK_CARD_DECLINE succeeds
+POST http://localhost:8085/api/v1/payments
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "orderId": "{{orderId}}",
+  "amount": 159.98,
+  "method": "VISA_TEST"
+}
+
+> {%
+    client.test("payment created", () => response.status === 201);
+    client.test("status is SUCCESS", () => response.body.status === "SUCCESS");
+    client.global.set("paymentId", response.body.id);
+%}
+
+### 11. Check the order again (O2) - should now read PAID once order-service
+### has consumed PaymentConfirmedEvent from Kafka. If it still shows PENDING,
+### wait a second and re-run - same Kafka-delivery caveat as #9.
+GET http://localhost:8083/api/v1/orders/{{orderId}}
+Authorization: Bearer {{customerToken}}
+
+### 12. Check payment status by orderId (PAY2)
+GET http://localhost:8085/api/v1/payments/order/{{orderId}}
+Authorization: Bearer {{customerToken}}
+
+### 13. Admin view of all transactions (PAY4)
+GET http://localhost:8085/api/v1/payments
+Authorization: Bearer {{adminToken}}
+
+### 14. Cancel a *different* order to test refund eligibility - place one more order first
+POST http://localhost:8083/api/v1/orders
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "items": [
+    { "productId": "{{productId}}", "quantity": 1 }
+  ]
+}
+
+> {%
+    client.global.set("orderId2", response.body.id);
+%}
+
+### 15. Pay for order #2 so it becomes eligible for a refund after cancelling
+POST http://localhost:8085/api/v1/payments
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "orderId": "{{orderId2}}",
+  "amount": 79.99,
+  "method": "VISA_TEST"
+}
+
+> {%
+    client.global.set("paymentId2", response.body.id);
+%}
+
+### 16. Cancel order #2 (O4) - needs order-service to have already processed
+### #15's PaymentConfirmedEvent (order must be PAID, not PENDING) - if this
+### 409s with INVALID_ORDER_STATE, wait a moment for Kafka and retry.
+POST http://localhost:8083/api/v1/orders/{{orderId2}}/cancel
+Authorization: Bearer {{customerToken}}
+
+> {%
+    client.test("cancelled", () => response.status === 200);
+    client.test("status is CANCELLED", () => response.body.status === "CANCELLED");
+%}
+
+### 17. Request a refund for order #2's payment (PAY3) - should now be eligible
+POST http://localhost:8085/api/v1/payments/{{paymentId2}}/refund
+Content-Type: application/json
+Authorization: Bearer {{customerToken}}
+
+{
+  "amount": 79.99
+}
+
+> {%
+    client.test("refund processed", () => response.status === 201);
+    client.test("status is PROCESSED", () => response.body.status === "PROCESSED");
+%}
+
+### 18. Low-stock alerts as admin (I4) - probably empty unless you've pushed
+### quantityAvailable below the default threshold (10)
+GET http://localhost:8084/api/v1/inventory/alerts
+Authorization: Bearer {{adminToken}}

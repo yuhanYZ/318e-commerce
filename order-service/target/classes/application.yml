@@ -1,0 +1,60 @@
+server:
+  port: 8083
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: jdbc:h2:mem:orderservice;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  kafka:
+    bootstrap-servers: localhost:9092
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      properties:
+        max.block.ms: 2000 # fail fast instead of blocking ~60s when no broker is running yet (see OrderEventPublisher)
+        # Alias -> class name, instead of letting JsonSerializer default to the raw fully-qualified
+        # class name in the __TypeId__ header - other services (e.g. inventory-Service) deserialize
+        # the same alias into their OWN local copy of the event class (separate Maven modules, no
+        # shared dependency), so both sides only need to agree on the alias string, not the package.
+        spring.json.type.mapping: "order-created:com.ecommerce.orderservice.event.OrderCreatedEvent,order-cancelled:com.ecommerce.orderservice.event.OrderCancelledEvent"
+    consumer:
+      group-id: order-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: "com.ecommerce.orderservice.event"
+        spring.json.type.mapping: "payment-confirmed:com.ecommerce.orderservice.event.PaymentConfirmedEvent,payment-failed:com.ecommerce.orderservice.event.PaymentFailedEvent"
+
+# MUST be identical to user-service's app.jwt.secret - all services validate tokens
+# signed with the same key. In a real deployment this would come from a shared
+# secret store / environment variable, not be duplicated in source per service.
+app:
+  jwt:
+    secret: "kQbfTYJzlIoUnLQQ7pah1+LRq3mUgOznZW7FQdpUwvbRh2BI1cIpDIAY9k5gn8TK"
+  services:
+    inventory-service:
+      base-url: http://localhost:8084/api/v1
+    product-service:
+      base-url: http://localhost:8082/api/v1
+
+logging:
+  level:
+    com.ecommerce.orderservice: INFO
+    org.apache.kafka: ERROR       # silence background broker-connection retry noise; no broker exists yet
+    org.springframework.kafka: WARN

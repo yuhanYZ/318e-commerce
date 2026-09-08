@@ -74,8 +74,8 @@ public class PaymentService {
      * javadoc for the one case that's a hard 409 instead.
      */
     @Transactional
-    public PaymentResponse payForOrder(String userId, PaymentRequest request) {
-        OrderInfo order = orderClient.getOrder(request.getOrderId())
+    public PaymentResponse payForOrder(String userId, PaymentRequest request, String authorizationHeader) {
+        OrderInfo order = orderClient.getOrder(request.getOrderId(), authorizationHeader)
                 .orElseThrow(() -> new OrderNotPayableException("Order not found: " + request.getOrderId()));
 
         if (!order.getUserId().equals(userId)) {
@@ -114,11 +114,11 @@ public class PaymentService {
 
     /** PAY2: current payment status for an order, enforcing ownership via Order Service. */
     @Transactional(readOnly = true)
-    public PaymentResponse getPaymentByOrderId(String userId, String orderId) {
+    public PaymentResponse getPaymentByOrderId(String userId, String orderId, String authorizationHeader) {
         Payment payment = paymentRepository.findByOrderId(orderId)
                 .orElseThrow(() -> new PaymentNotFoundException("No payment found for orderId=" + orderId));
 
-        OrderInfo order = orderClient.getOrder(orderId)
+        OrderInfo order = orderClient.getOrder(orderId, authorizationHeader)
                 .orElseThrow(() -> new OrderServiceUnavailableException(
                         "Order " + orderId + " referenced by an existing payment could not be found via Order Service"));
         if (!order.getUserId().equals(userId)) {
@@ -135,11 +135,11 @@ public class PaymentService {
      * complete audit trail even for ineligible attempts.
      */
     @Transactional
-    public RefundResponse requestRefund(String userId, String paymentId, RefundRequest request) {
+    public RefundResponse requestRefund(String userId, String paymentId, RefundRequest request, String authorizationHeader) {
         Payment payment = paymentRepository.findById(paymentId)
                 .orElseThrow(() -> new PaymentNotFoundException("Payment not found: " + paymentId));
 
-        OrderInfo order = orderClient.getOrder(payment.getOrderId()).orElse(null);
+        OrderInfo order = orderClient.getOrder(payment.getOrderId(), authorizationHeader).orElse(null);
         if (order == null) {
             log.error("Payment {} references orderId={} which Order Service could not find", paymentId, payment.getOrderId());
         } else if (!order.getUserId().equals(userId)) {

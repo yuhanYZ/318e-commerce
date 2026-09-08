@@ -77,7 +77,7 @@ class PaymentControllerIntegrationTest {
     @Test
     void payForOrder_validPendingOrder_returns201Success() throws Exception {
         String userId = UUID.randomUUID().toString();
-        Mockito.when(orderClient.getOrder("ORD-1")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-1", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-1", userId, "PENDING", new BigDecimal("39.98"),
                         List.of(new OrderItemInfo("PRD-1", 2)))));
 
@@ -96,7 +96,7 @@ class PaymentControllerIntegrationTest {
     @Test
     void payForOrder_declineMethod_returns201Failed() throws Exception {
         String userId = UUID.randomUUID().toString();
-        Mockito.when(orderClient.getOrder("ORD-2")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-2", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-2", userId, "PENDING", new BigDecimal("20.00"), List.of())));
 
         PaymentRequest request = new PaymentRequest("ORD-2", new BigDecimal("20.00"), DECLINE_TRIGGER);
@@ -113,7 +113,7 @@ class PaymentControllerIntegrationTest {
     @Test
     void payForOrder_amountMismatch_returns201Failed() throws Exception {
         String userId = UUID.randomUUID().toString();
-        Mockito.when(orderClient.getOrder("ORD-3")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-3", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-3", userId, "PENDING", new BigDecimal("39.98"), List.of())));
 
         PaymentRequest request = new PaymentRequest("ORD-3", new BigDecimal("10.00"), "VISA_TEST");
@@ -129,7 +129,7 @@ class PaymentControllerIntegrationTest {
 
     @Test
     void payForOrder_orderNotFound_returns409() throws Exception {
-        Mockito.when(orderClient.getOrder(anyString())).thenReturn(Optional.empty());
+        Mockito.when(orderClient.getOrder(anyString(), anyString())).thenReturn(Optional.empty());
 
         PaymentRequest request = new PaymentRequest("does-not-exist", new BigDecimal("10.00"), "VISA_TEST");
         String token = generateToken(UUID.randomUUID().toString(), "CUSTOMER");
@@ -145,7 +145,7 @@ class PaymentControllerIntegrationTest {
     @Test
     void payForOrder_orderNotPending_returns409() throws Exception {
         String userId = UUID.randomUUID().toString();
-        Mockito.when(orderClient.getOrder("ORD-4")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-4", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-4", userId, "PAID", new BigDecimal("10.00"), List.of())));
 
         PaymentRequest request = new PaymentRequest("ORD-4", new BigDecimal("10.00"), "VISA_TEST");
@@ -161,7 +161,7 @@ class PaymentControllerIntegrationTest {
 
     @Test
     void payForOrder_notOrderOwner_returns403() throws Exception {
-        Mockito.when(orderClient.getOrder("ORD-5")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-5", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-5", UUID.randomUUID().toString(), "PENDING", new BigDecimal("10.00"), List.of())));
 
         PaymentRequest request = new PaymentRequest("ORD-5", new BigDecimal("10.00"), "VISA_TEST");
@@ -190,7 +190,7 @@ class PaymentControllerIntegrationTest {
     void getPaymentByOrderId_owner_returns200() throws Exception {
         String userId = UUID.randomUUID().toString();
         persistPayment("ORD-7", new BigDecimal("15.00"), PaymentStatus.SUCCESS, "VISA_TEST");
-        Mockito.when(orderClient.getOrder("ORD-7")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-7", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-7", userId, "PAID", new BigDecimal("15.00"), List.of())));
         String token = generateToken(userId, "CUSTOMER");
 
@@ -217,7 +217,7 @@ class PaymentControllerIntegrationTest {
     void requestRefund_eligible_returns201() throws Exception {
         String userId = UUID.randomUUID().toString();
         Payment payment = persistPayment("ORD-8", new BigDecimal("25.00"), PaymentStatus.SUCCESS, "VISA_TEST");
-        Mockito.when(orderClient.getOrder("ORD-8")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-8", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-8", userId, "CANCELLED", new BigDecimal("25.00"), List.of())));
 
         RefundRequest request = new RefundRequest(new BigDecimal("25.00"));
@@ -235,7 +235,7 @@ class PaymentControllerIntegrationTest {
     void requestRefund_orderNotCancelled_returns409() throws Exception {
         String userId = UUID.randomUUID().toString();
         Payment payment = persistPayment("ORD-9", new BigDecimal("25.00"), PaymentStatus.SUCCESS, "VISA_TEST");
-        Mockito.when(orderClient.getOrder("ORD-9")).thenReturn(Optional.of(
+        Mockito.when(orderClient.getOrder("ORD-9", anyString())).thenReturn(Optional.of(
                 new OrderInfo("ORD-9", userId, "PAID", new BigDecimal("25.00"), List.of())));
 
         RefundRequest request = new RefundRequest(new BigDecimal("25.00"));
