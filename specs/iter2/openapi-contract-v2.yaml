@@ -1,0 +1,1386 @@
+openapi: 3.0.3
+info:
+  title: E-Commerce Microservices API Specification (Iteration 2)
+  description: |
+    OpenAPI 3.0 specification for the 318e-e-commerce microservice application (CSCI318 capstone) —
+    User, Product, Order, Inventory, Payment, and AI-Customer services, based on specs-iter2:
+    `1-technical-architecture-v2.md`, `2-user-stories-*-v2.md`, `3-domain-models-*-ddd.md`,
+    `4-api-endpoints-v2.md`, `5-event-sourcing.md`, and `6-cqrs-command-query.md`.
+
+    Each operation's summary is annotated with its Feature ID (matching `4-api-endpoints-v2.md`)
+    and its CQRS type (Command / Query, matching `6-cqrs-command-query.md`). Kafka-consumed event
+    handlers (O5, I2, I5) are not exposed as REST endpoints — see the "Async / Event-Driven Workflows"
+    notes on the related paths.
+  version: 2.0.0
+
+servers:
+  - url: http://localhost:8081/api/v1
+    description: User Service Local Development Server
+  - url: http://localhost:8082/api/v1
+    description: Product Service Local Development Server
+  - url: http://localhost:8083/api/v1
+    description: Order Service Local Development Server
+  - url: http://localhost:8084/api/v1
+    description: Inventory Service Local Development Server
+  - url: http://localhost:8085/api/v1
+    description: Payment Service Local Development Server
+  - url: http://localhost:8086/api/v1
+    description: AI-Customer Service Local Development Server
+
+tags:
+  - name: User Service
+    description: Account registration, authentication, and profile management endpoints
+  - name: Product Service
+    description: Product catalog browsing, search, and management endpoints
+  - name: Order Service
+    description: Order placement, status tracking, and cancellation endpoints
+  - name: Inventory Service
+    description: |
+      Stock availability, adjustment, and low-stock alert endpoints.
+      `StockItemAggregate` is event-sourced (see `5-event-sourcing.md`) — write responses
+      include an `version` field reflecting the aggregate's event stream version.
+      `LowStockAlert` remains a CRUD aggregate.
+  - name: Payment Service
+    description: Payment processing and refund endpoints
+  - name: AI-Customer Service
+    description: Agentic AI chat, escalation, and conversation log endpoints
+
+paths:
+  # ==========================================
+  # USER SERVICE ENDPOINTS
+  # ==========================================
+  /users/register:
+    post:
+      tags:
+        - User Service
+      summary: Register a new customer account (Feature U1, Command)
+      operationId: registerUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created successfully; UserRegistered domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '409':
+          description: An account with this email already exists
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "EmailAlreadyExists"
+                message: "An account with this email already exists"
+                timestamp: "2026-09-09T02:00:00Z"
+
+  /users/login:
+    post:
+      tags:
+        - User Service
+      summary: Authenticate and issue a JWT token (Feature U2, Command)
+      operationId: loginUser
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Login successful; UserLoggedIn domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthResponse'
+        '401':
+          description: Invalid email or password
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "InvalidCredentials"
+                message: "Invalid email or password"
+                timestamp: "2026-09-09T02:00:00Z"
+        '423':
+          $ref: '#/components/responses/AccountLocked'
+
+  /users/me:
+    get:
+      tags:
+        - User Service
+      summary: Get the current user's profile (Feature U3, Query)
+      operationId: getMyProfile
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Profile retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    put:
+      tags:
+        - User Service
+      summary: Update name, address, or phone (Feature U3, Command)
+      operationId: updateMyProfile
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateProfileRequest'
+      responses:
+        '200':
+          description: Profile updated successfully; ProfileUpdated domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+    delete:
+      tags:
+        - User Service
+      summary: Deactivate account (soft delete) (Feature U5, Command)
+      operationId: deactivateMyAccount
+      security:
+        - bearerAuth: []
+      responses:
+        '204':
+          description: Account deactivated successfully; AccountDeactivated domain event emitted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /users/password-reset/request:
+    post:
+      tags:
+        - User Service
+      summary: Request a password reset token by email (Feature U4, Command)
+      operationId: requestPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetRequest'
+      responses:
+        '202':
+          description: |
+            Reset token generated and PasswordResetRequested domain event emitted.
+            Always returned (even for an unknown email) to avoid email enumeration.
+
+  /users/password-reset/confirm:
+    post:
+      tags:
+        - User Service
+      summary: Submit token and new password (Feature U4, Command)
+      operationId: confirmPasswordReset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordResetConfirmRequest'
+      responses:
+        '200':
+          description: Password updated successfully; PasswordResetCompleted domain event emitted
+        '400':
+          description: Token expired, already used, or invalid
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "ResetTokenInvalidOrExpired"
+                message: "This reset token has expired or already been used"
+                timestamp: "2026-09-09T02:00:00Z"
+
+  # ==========================================
+  # PRODUCT SERVICE ENDPOINTS
+  # ==========================================
+  /products:
+    get:
+      tags:
+        - Product Service
+      summary: Browse products by category, paginated (Feature P1, Query)
+      operationId: browseProducts
+      parameters:
+        - name: categoryId
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+      responses:
+        '200':
+          description: Paginated list of active products in the category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductPageResponse'
+
+    post:
+      tags:
+        - Product Service
+      summary: Create a new product (Feature P4, Command, Admin only)
+      operationId: createProduct
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductCreateRequest'
+      responses:
+        '201':
+          description: Product created successfully; ProductCreated domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /products/{id}:
+    get:
+      tags:
+        - Product Service
+      summary: Get product details, incl. live stock status (Feature P2, Query)
+      description: |
+        Includes an inter-service REST call to Inventory Service
+        (GET /inventory/{productId}) to retrieve current stock quantity from `inventory_read_model`.
+      operationId: getProductById
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product details retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductDetailResponse'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+    put:
+      tags:
+        - Product Service
+      summary: Update a product (Feature P4, Command, Admin only)
+      operationId: updateProduct
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProductUpdateRequest'
+      responses:
+        '200':
+          description: Product updated successfully; ProductUpdated domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /products/{id}/deactivate:
+    patch:
+      tags:
+        - Product Service
+      summary: Deactivate a product (Feature P4, Command, Admin only)
+      operationId: deactivateProduct
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Product deactivated successfully; ProductDeactivated domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProductResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /products/search:
+    get:
+      tags:
+        - Product Service
+      summary: Search products by name/description keyword (Feature P3, Query)
+      operationId: searchProducts
+      parameters:
+        - name: q
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Products matching the keyword, ranked by relevance (empty array if none)
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProductResponse'
+
+  # ==========================================
+  # ORDER SERVICE ENDPOINTS
+  # ==========================================
+  /orders:
+    post:
+      tags:
+        - Order Service
+      summary: Place a new order (Feature O1, Command)
+      description: |
+        Includes an inter-service REST call to Inventory Service (GET /inventory/{productId})
+        for each item to confirm sufficient stock before creating the order. On success, emits
+        OrderPlaced and publishes OrderCreatedEvent to Kafka — consumed asynchronously by
+        Inventory Service (Feature I2, Event Handler) to deduct stock via `StockDeducted`.
+      operationId: placeOrder
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Order created successfully with status PENDING
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/StockInvariantViolation'
+
+    get:
+      tags:
+        - Order Service
+      summary: List the current user's order history, paginated (Feature O3, Query)
+      operationId: listMyOrders
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+      responses:
+        '200':
+          description: Paginated order history, newest first (empty array if none)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /orders/{id}:
+    get:
+      tags:
+        - Order Service
+      summary: Get the current status of an order (Feature O2, Query)
+      operationId: getOrderById
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /orders/{id}/cancel:
+    post:
+      tags:
+        - Order Service
+      summary: Cancel an order before it ships (Feature O4, Command)
+      description: |
+        Emits OrderCancelled and publishes OrderCancelledEvent to Kafka on success.
+        Consumed asynchronously by Inventory Service (Feature I5, Event Handler) to
+        release previously deducted stock via `StockReleased`.
+      operationId: cancelOrder
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Order cancelled successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/OrderStateViolation'
+
+  # ==========================================
+  # INVENTORY SERVICE ENDPOINTS
+  # (StockItemAggregate is event-sourced — see 5-event-sourcing.md)
+  # ==========================================
+  /inventory/{productId}:
+    get:
+      tags:
+        - Inventory Service
+      summary: Check stock availability for a product (Feature I1, Query)
+      description: Reads from the `inventory_read_model` projection, not the `StockItemAggregate` event stream directly.
+      operationId: getStockByProductId
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Current stock level retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockResponse'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /inventory/{productId}/adjust:
+    post:
+      tags:
+        - Inventory Service
+      summary: Manually adjust stock / restock (Feature I3, Command, Admin only)
+      description: |
+        Executes `StockItemAggregate.adjust(delta, reason, adjustedBy)`. Appends `StockItemInitialized`
+        (on first adjustment for a product) and `StockAdjusted` to the event store; may also emit
+        `LowStockAlertResolved` on the (CRUD) `LowStockAlertAggregate` if the adjustment clears
+        the global low-stock threshold.
+      operationId: adjustStock
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: productId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockAdjustmentRequest'
+      responses:
+        '200':
+          description: Stock adjusted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/StockInvariantViolation'
+
+  /inventory/alerts:
+    get:
+      tags:
+        - Inventory Service
+      summary: List active low-stock alerts (Feature I4, Query, Admin only)
+      description: Reads from the `LowStockAlert` CRUD store — `LowStockAlertAggregate` is not event-sourced.
+      operationId: listLowStockAlerts
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Active low-stock alerts retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LowStockAlertResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ==========================================
+  # PAYMENT SERVICE ENDPOINTS
+  # ==========================================
+  /payments:
+    post:
+      tags:
+        - Payment Service
+      summary: Pay for a pending order (Feature PAY1, Command)
+      description: |
+        Includes an inter-service REST call to Order Service (GET /orders/{id}) to confirm the
+        order exists and is not already paid. Emits PaymentInitiated, then PaymentSucceeded or
+        PaymentFailed, and publishes the corresponding Kafka event — consumed asynchronously by
+        Order Service (Feature O5, Event Handler) to transition the order to PAID / PAYMENT_FAILED.
+        `method` is fixed to `"MOCK"` (no real/sandbox gateway integration) and is not accepted as input.
+      operationId: payForOrder
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '201':
+          description: Payment processed; PaymentConfirmedEvent or PaymentFailedEvent published to Kafka
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          $ref: '#/components/responses/ValidationFailed'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/PaymentStateViolation'
+
+    get:
+      tags:
+        - Payment Service
+      summary: List all payment/refund transactions, paginated (Feature PAY4, Query, Admin only)
+      operationId: listAllPayments
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Transaction records retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentPageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /payments/order/{orderId}:
+    get:
+      tags:
+        - Payment Service
+      summary: Get the payment status for an order (Feature PAY2, Query)
+      operationId: getPaymentByOrderId
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Payment status retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /payments/{id}/refund:
+    post:
+      tags:
+        - Payment Service
+      summary: Request a refund for a paid order (Feature PAY3, Command)
+      description: |
+        Full refunds only — `Refund.amount` always equals the original `Payment.amount`
+        (iter2 domain decision), so `amount` is not accepted as input. Emits RefundRequested,
+        then RefundProcessed or RefundRejected.
+      operationId: requestRefund
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundRequest'
+      responses:
+        '201':
+          description: Refund processed; RefundProcessed event published
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          $ref: '#/components/responses/PaymentStateViolation'
+
+  # ==========================================
+  # AI-CUSTOMER SERVICE ENDPOINTS
+  # ==========================================
+  /ai-chat/sessions/{sessionId}/messages:
+    post:
+      tags:
+        - AI-Customer Service
+      summary: Ask a product/order question or return/exchange question (Features AI1, AI2, Command)
+      description: |
+        Executes `ConversationSessionAggregate.postMessage(...)`, emitting MessageSent. The agent
+        (via LangChain4j tool calling) may issue REST requests to Product Service and/or Order
+        Service to retrieve grounded data before the LLM (GPT-4o-mini) composes its reply.
+      operationId: sendChatMessage
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChatMessageRequest'
+      responses:
+        '200':
+          description: AI response generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChatMessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+    get:
+      tags:
+        - AI-Customer Service
+      summary: Get full message history for a session (Feature AI4, Query, Admin only)
+      operationId: getSessionMessages
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Message history retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ChatMessageResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /ai-chat/sessions/{sessionId}/escalate:
+    post:
+      tags:
+        - AI-Customer Service
+      summary: Escalate the session to a human agent (Feature AI3, Command)
+      operationId: escalateSession
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Session escalated successfully; SessionEscalated domain event emitted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConversationSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ResourceNotFound'
+
+  /ai-chat/sessions:
+    get:
+      tags:
+        - AI-Customer Service
+      summary: List conversation sessions, paginated (Feature AI4, Query, Admin only)
+      operationId: listSessions
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Sessions retrieved successfully
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ConversationSessionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+# ==========================================
+# COMPONENTS & SCHEMAS
+# ==========================================
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    # ---------- Shared Value Objects ----------
+    Money:
+      type: object
+      required: [amount, currency]
+      description: Shared `Money` value object (see domain models §2.2 across Order/Payment/Product Service)
+      properties:
+        amount:
+          type: number
+          format: double
+          minimum: 0
+          example: 29.99
+        currency:
+          type: string
+          example: "AUD"
+          default: "AUD"
+
+    # ---------- User Service ----------
+    RegisterRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          example: "customer@example.com"
+        password:
+          type: string
+          format: password
+          example: "P@ssw0rd123"
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          example: "customer@example.com"
+        password:
+          type: string
+          format: password
+          example: "P@ssw0rd123"
+
+    AuthResponse:
+      type: object
+      properties:
+        token:
+          type: string
+          example: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+        userId:
+          type: string
+          example: "USR-1001"
+
+    UserResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "USR-1001"
+        email:
+          type: string
+          example: "customer@example.com"
+        role:
+          type: string
+          enum: [CUSTOMER, ADMIN]
+          example: "CUSTOMER"
+
+    UserProfileResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "USR-1001"
+        email:
+          type: string
+          example: "customer@example.com"
+        name:
+          type: string
+          example: "Jane Doe"
+        address:
+          type: string
+          example: "12 King St, Wollongong NSW"
+        phone:
+          type: string
+          example: "+61 400 000 000"
+        role:
+          type: string
+          enum: [CUSTOMER, ADMIN]
+        status:
+          type: string
+          enum: [ACTIVE, LOCKED, DEACTIVATED]
+
+    UpdateProfileRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        address:
+          type: string
+        phone:
+          type: string
+
+    PasswordResetRequest:
+      type: object
+      required: [email]
+      properties:
+        email:
+          type: string
+          example: "customer@example.com"
+
+    PasswordResetConfirmRequest:
+      type: object
+      required: [token, newPassword]
+      properties:
+        token:
+          type: string
+        newPassword:
+          type: string
+          format: password
+
+    # ---------- Product Service ----------
+    ProductResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "PRD-2001"
+        name:
+          type: string
+          example: "Wireless Mouse"
+        description:
+          type: string
+          example: "2.4GHz wireless mouse with USB receiver"
+        price:
+          $ref: '#/components/schemas/Money'
+        imageUrl:
+          type: string
+          example: "https://cdn.example.com/products/2001.jpg"
+        categoryId:
+          type: string
+          example: "CAT-10"
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+
+    ProductDetailResponse:
+      allOf:
+        - $ref: '#/components/schemas/ProductResponse'
+        - type: object
+          properties:
+            stockAvailable:
+              type: integer
+              example: 42
+            isInStock:
+              type: boolean
+              example: true
+
+    ProductPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductResponse'
+        page:
+          type: integer
+          example: 0
+        totalElements:
+          type: integer
+          example: 87
+
+    ProductCreateRequest:
+      type: object
+      required: [name, price, categoryId]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        imageUrl:
+          type: string
+        categoryId:
+          type: string
+
+    ProductUpdateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        price:
+          $ref: '#/components/schemas/Money'
+        imageUrl:
+          type: string
+
+    # ---------- Order Service ----------
+    CreateOrderRequest:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+            required: [productId, quantity]
+            properties:
+              productId:
+                type: string
+                example: "PRD-2001"
+              quantity:
+                type: integer
+                minimum: 1
+                example: 2
+
+    OrderItemResponse:
+      type: object
+      properties:
+        productId:
+          type: string
+          example: "PRD-2001"
+        quantity:
+          type: integer
+          example: 2
+        unitPrice:
+          $ref: '#/components/schemas/Money'
+
+    OrderResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "ORD-5001"
+        userId:
+          type: string
+          example: "USR-1001"
+        status:
+          type: string
+          enum: [PENDING, PAID, PAYMENT_FAILED, SHIPPED, CANCELLED]
+        totalAmount:
+          $ref: '#/components/schemas/Money'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderItemResponse'
+        createdAt:
+          type: string
+          format: date-time
+          example: "2026-09-09T10:00:00Z"
+
+    OrderPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/OrderResponse'
+        page:
+          type: integer
+          example: 0
+        totalElements:
+          type: integer
+          example: 14
+
+    # ---------- Inventory Service (StockItemAggregate is event-sourced) ----------
+    StockResponse:
+      type: object
+      properties:
+        productId:
+          type: string
+          example: "PRD-2001"
+        quantityAvailable:
+          type: integer
+          example: 42
+        isAvailable:
+          type: boolean
+          example: true
+        version:
+          type: integer
+          description: "`aggregateVersion` of the underlying StockItemAggregate event stream (see 5-event-sourcing.md §3.1)"
+          example: 8
+
+    StockAdjustmentRequest:
+      type: object
+      required: [delta]
+      properties:
+        delta:
+          type: integer
+          description: Positive to restock, negative to deduct
+          example: 50
+        reason:
+          type: string
+          example: "Supplier restock"
+
+    LowStockAlertResponse:
+      type: object
+      description: Read from the `LowStockAlert` CRUD store (not event-sourced)
+      properties:
+        id:
+          type: string
+          example: "ALERT-301"
+        stockItemId:
+          type: string
+          example: "STK-2001"
+        triggeredAt:
+          type: string
+          format: date-time
+        resolvedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    # ---------- Payment Service ----------
+    PaymentRequest:
+      type: object
+      required: [orderId, amount]
+      description: "`method` is not accepted here — it is fixed server-side to `\"MOCK\"` (iter2 domain decision)"
+      properties:
+        orderId:
+          type: string
+          example: "ORD-5001"
+        amount:
+          $ref: '#/components/schemas/Money'
+
+    PaymentResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "PAY-7001"
+        orderId:
+          type: string
+          example: "ORD-5001"
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum: [PENDING, SUCCESS, FAILED, REFUNDED]
+        method:
+          type: string
+          enum: [MOCK]
+          example: "MOCK"
+        createdAt:
+          type: string
+          format: date-time
+
+    PaymentPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentResponse'
+        page:
+          type: integer
+          example: 0
+        totalElements:
+          type: integer
+          example: 200
+
+    RefundRequest:
+      type: object
+      description: |
+        Empty by design — full refunds only. `Refund.amount` is always set server-side
+        to equal the original `Payment.amount` (iter2 domain decision, no partial refunds).
+      properties:
+        reason:
+          type: string
+          example: "Customer requested cancellation"
+
+    RefundResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "REF-9001"
+        paymentId:
+          type: string
+          example: "PAY-7001"
+        amount:
+          $ref: '#/components/schemas/Money'
+        status:
+          type: string
+          enum: [REQUESTED, PROCESSED, REJECTED]
+        requestedAt:
+          type: string
+          format: date-time
+
+    # ---------- AI-Customer Service ----------
+    ChatMessageRequest:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          example: "Where is my order ORD-5001?"
+
+    ChatMessageResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "MSG-8001"
+        sessionId:
+          type: string
+          example: "SESS-4001"
+        sender:
+          type: string
+          enum: [USER, AI, AGENT]
+        content:
+          type: string
+          example: "Your order ORD-5001 is currently SHIPPED and should arrive within 2 business days."
+        createdAt:
+          type: string
+          format: date-time
+
+    ConversationSessionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          example: "SESS-4001"
+        userId:
+          type: string
+          example: "USR-1001"
+        status:
+          type: string
+          enum: [ACTIVE, ESCALATED, CLOSED]
+        createdAt:
+          type: string
+          format: date-time
+
+    # ---------- Shared ----------
+    ErrorResponse:
+      type: object
+      required: [code, message, timestamp]
+      description: |
+        `code` follows the shared codes in `6-cqrs-command-query.md` §8 of `4-api-endpoints-v2.md`
+        (ResourceNotFound, ValidationFailed, Unauthorized, Forbidden, AccountLocked,
+        StockInvariantViolation, OrderStateViolation, PaymentStateViolation) where applicable;
+        a small number of per-service codes (e.g. EmailAlreadyExists) are not in that shared table.
+      properties:
+        code:
+          type: string
+          example: "ResourceNotFound"
+        message:
+          type: string
+          example: "Order not found"
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-09-09T19:15:00Z"
+        details:
+          type: object
+          additionalProperties: true
+
+  responses:
+    ValidationFailed:
+      description: Invalid request shape or parameters (HTTP 400)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "ValidationFailed"
+            message: "Invalid request parameters or body payload"
+            timestamp: "2026-09-09T19:15:00Z"
+    ResourceNotFound:
+      description: Requested user/product/order/payment/session was not found (HTTP 404)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "ResourceNotFound"
+            message: "Requested resource was not found"
+            timestamp: "2026-09-09T19:15:00Z"
+    Unauthorized:
+      description: Missing or invalid JWT (HTTP 401)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "Unauthorized"
+            message: "Missing or invalid authentication token"
+            timestamp: "2026-09-09T19:15:00Z"
+    Forbidden:
+      description: Authenticated user lacks the ADMIN role for this action (HTTP 403)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "Forbidden"
+            message: "This action requires the ADMIN role"
+            timestamp: "2026-09-09T19:15:00Z"
+    AccountLocked:
+      description: Login blocked after 5 failed attempts within 10 minutes (HTTP 423)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "AccountLocked"
+            message: "Account locked after 5 failed login attempts within 10 minutes"
+            timestamp: "2026-09-09T19:15:00Z"
+    StockInvariantViolation:
+      description: Inventory rule violation — available stock would go below zero (HTTP 409)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "StockInvariantViolation"
+            message: "Insufficient stock for one or more items"
+            timestamp: "2026-09-09T19:15:00Z"
+    OrderStateViolation:
+      description: Order status transition denied, e.g. cancel after SHIPPED (HTTP 409)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "OrderStateViolation"
+            message: "Order already SHIPPED or CANCELLED"
+            timestamp: "2026-09-09T19:15:00Z"
+    PaymentStateViolation:
+      description: |
+        Payment/refund transition denied — e.g. refund requested on a non-SUCCESS payment,
+        or the order is not eligible for payment (already paid) (HTTP 409)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            code: "PaymentStateViolation"
+            message: "Order is not in a payable/refundable state"
+            timestamp: "2026-09-09T19:15:00Z"

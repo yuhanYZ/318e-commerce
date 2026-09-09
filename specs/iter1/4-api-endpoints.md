@@ -74,9 +74,3 @@
 
 ---
 
-## Notes
-
-- Ports (`8081`–`8086`) are placeholders for local development — confirm against the actual `application.yml` / Docker Compose config once services are scaffolded.
-- Rows marked `N/A (Kafka consumer)` are not REST endpoints — they represent asynchronous event listeners and are included here for completeness against the user stories in [2-user-stories.md](./2-user-stories.md).
-- Request/response DTO names are proposed conventions (`XxxRequest` / `XxxResponse`) — align with whatever naming convention the team settles on for the actual codebase.
-- Endpoints requiring `Admin` role should return `403 Forbidden` for non-admin callers (see P4, I3, I4, PAY4, AI4).
