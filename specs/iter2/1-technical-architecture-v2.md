@@ -46,4 +46,26 @@ The project is structured as a multi-module repository:
     - LLM Provider: GPT-4o-mini
     - Powers the AI-Customer Service automated support system
 - **Unit & Integration Testing**: `MockMvc`, `@SpringBootTest`, `JUnit 5`
+    - Kafka: `spring-kafka-test` `@EmbeddedKafka` (or the Spring Cloud Stream test binder) — no external broker in tests
+    - Inter-service REST: `MockRestServiceServer` / WireMock stubs
+    - LLM: the `ChatAgent` port is stubbed under the `test` profile — no live OpenAI calls in tests
+
+## Security Model
+- Authentication is JWT (HS256). User Service issues tokens; every service validates them locally with the same shared secret (`app.jwt.secret`). Claims: `sub` (userId), `role` (`CUSTOMER` | `ADMIN`), `exp`.
+- Authorization for Admin-only endpoints is a `role = ADMIN` claim check inside each service. No API gateway or central auth server in this iteration.
+- A single `ADMIN` account is seeded by User Service at startup from `app.admin.email` / `app.admin.password`.
+- Server-to-server calls to protected endpoints (Payment → Order, AI-Customer → Order) forward the end user's bearer token unchanged; calls to public endpoints (`GET /products/{id}`, `GET /inventory/{productId}`) carry no token.
+
+## Messaging Model
+- Domain events (e.g. `OrderPlaced`) are raised inside the aggregate and handled within the service.
+- A fixed subset is translated 1:1 into Kafka integration events by the Infrastructure layer and published through the Spring Cloud Stream Kafka binder (one topic per event type, JSON payload). The full catalog, topics, and consumers are in `6-cqrs-command-query.md` §8:
+  `OrderPlaced → OrderCreatedEvent`, `OrderCancelled → OrderCancelledEvent`, `PaymentSucceeded → PaymentConfirmedEvent`, `PaymentFailed → PaymentFailedEvent`, `RefundProcessed → RefundProcessedEvent`.
+- All Kafka consumers are idempotent on the event's business key.
+- The "real-time inventory alert" stream job (I4) is a Spring Cloud Stream function inside Inventory Service that evaluates every `StockItemAggregate` event against the global low-stock threshold.
+
+## Event Sourcing Scope
+- Only `StockItemAggregate` (Inventory Service) is event-sourced; every other aggregate is CRUD via Spring Data JPA. See `5-event-sourcing.md`.
+
+## Out of Scope for Iteration 2
+- Shipping / `SHIPPED` order status, order-level compensating rollback on asynchronous stock-deduction failure (the synchronous stock check in O1 is the safeguard), automatic refunds on cancellation, partial refunds, real payment gateways, session closing for AI chat, API Gateway, Saga orchestration.
 

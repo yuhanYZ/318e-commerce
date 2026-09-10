@@ -98,11 +98,15 @@ Evolution from `specs/3-domain-models.md`:
 
 **Invariants**
 1. `price.amount >= 0`.
-2. `status = INACTIVE` is a terminal listing state — reactivation is out of scope.
+2. `status = INACTIVE` is a terminal listing state — reactivation is out of scope; `update()` on an `INACTIVE` product is rejected (HTTP 409).
+3. `categoryId` must reference an existing `Category` (HTTP 400 `ValidationFailed` otherwise).
+
+**Inter-Service Note**
+- `GET /products/{id}` (P2) and `GET /inventory/{productId}` are public endpoints called server-to-server by Order Service (O1) and AI-Customer Service tool calls; no bearer token is required for them. When Inventory Service has no stock record for a product (HTTP 404), P2 reports `stockAvailable = 0`, `isInStock = false`.
 
 **Behaviors**
 - `create(name, description, price, imageUrl, categoryId)` — emits `ProductCreated`
-- `update(name, description, price, imageUrl, categoryId)` — emits `ProductUpdated`
+- `update(name, description, price, imageUrl, categoryId)` — all parameters optional (partial update); emits `ProductUpdated`
 - `deactivate()` — emits `ProductDeactivated`
 
 ---

@@ -101,7 +101,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/AuthResponse'
         '401':
-          description: Invalid email or password
+          description: Invalid email or password, or the account is DEACTIVATED
           content:
             application/json:
               schema:
@@ -283,6 +283,7 @@ paths:
       description: |
         Includes an inter-service REST call to Inventory Service
         (GET /inventory/{productId}) to retrieve current stock quantity from `inventory_read_model`.
+        If Inventory has no record for the product (404), `stockAvailable` is 0 and `isInStock` is false.
       operationId: getProductById
       parameters:
         - name: id
@@ -334,6 +335,16 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/ResourceNotFound'
+        '409':
+          description: Product is INACTIVE and can no longer be updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "ProductStateViolation"
+                message: "An INACTIVE product cannot be updated"
+                timestamp: "2026-09-09T19:15:00Z"
 
   /products/{id}/deactivate:
     patch:
@@ -394,9 +405,10 @@ paths:
         - Order Service
       summary: Place a new order (Feature O1, Command)
       description: |
-        Includes an inter-service REST call to Inventory Service (GET /inventory/{productId})
-        for each item to confirm sufficient stock before creating the order. On success, emits
-        OrderPlaced and publishes OrderCreatedEvent to Kafka — consumed asynchronously by
+        For each item, calls Product Service (GET /products/{id}) to confirm the product exists and is
+        ACTIVE and to snapshot its price as `unitPrice`, and Inventory Service (GET /inventory/{productId})
+        to confirm sufficient stock. A missing, INACTIVE, or untracked product is treated as unavailable (409).
+        On success, emits OrderPlaced and publishes OrderCreatedEvent to Kafka — consumed asynchronously by
         Inventory Service (Feature I2, Event Handler) to deduct stock via `StockDeducted`.
       operationId: placeOrder
       security:
@@ -435,6 +447,13 @@ paths:
           schema:
             type: integer
             default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
       responses:
         '200':
           description: Paginated order history, newest first (empty array if none)
@@ -479,9 +498,11 @@ paths:
         - Order Service
       summary: Cancel an order before it ships (Feature O4, Command)
       description: |
-        Emits OrderCancelled and publishes OrderCancelledEvent to Kafka on success.
-        Consumed asynchronously by Inventory Service (Feature I5, Event Handler) to
-        release previously deducted stock via `StockReleased`.
+        Allowed only while the order is PENDING or PAID. Emits OrderCancelled and publishes
+        OrderCancelledEvent to Kafka on success. Consumed asynchronously by Inventory Service
+        (Feature I5, Event Handler) to release previously deducted stock via `StockReleased`.
+        Cancelling does not refund automatically — a PAID order that is cancelled becomes
+        eligible for a customer-initiated refund (POST /payments/{id}/refund).
       operationId: cancelOrder
       security:
         - bearerAuth: []
@@ -538,10 +559,11 @@ paths:
         - Inventory Service
       summary: Manually adjust stock / restock (Feature I3, Command, Admin only)
       description: |
-        Executes `StockItemAggregate.adjust(delta, reason, adjustedBy)`. Appends `StockItemInitialized`
-        (on first adjustment for a product) and `StockAdjusted` to the event store; may also emit
-        `LowStockAlertResolved` on the (CRUD) `LowStockAlertAggregate` if the adjustment clears
-        the global low-stock threshold.
+        Executes `StockItemAggregate.adjust(delta, reason, adjustedBy)` and appends `StockAdjusted`
+        to the event store. The first adjustment for a product starts its event stream from quantity 0
+        (there is no separate initialization event). May also emit `LowStockAlertTriggered` /
+        `LowStockAlertResolved` on the (CRUD) `LowStockAlertAggregate` if the adjustment crosses /
+        clears the global low-stock threshold. A negative `delta` that would take stock below zero is 409.
       operationId: adjustStock
       security:
         - bearerAuth: []
@@ -605,11 +627,13 @@ paths:
         - Payment Service
       summary: Pay for a pending order (Feature PAY1, Command)
       description: |
-        Includes an inter-service REST call to Order Service (GET /orders/{id}) to confirm the
-        order exists and is not already paid. Emits PaymentInitiated, then PaymentSucceeded or
-        PaymentFailed, and publishes the corresponding Kafka event — consumed asynchronously by
-        Order Service (Feature O5, Event Handler) to transition the order to PAID / PAYMENT_FAILED.
-        `method` is fixed to `"MOCK"` (no real/sandbox gateway integration) and is not accepted as input.
+        Includes an inter-service REST call to Order Service (GET /orders/{id}, forwarding the caller's
+        bearer token) to confirm the order exists and its status is exactly PENDING (409 otherwise —
+        PAYMENT_FAILED orders cannot be retried). `amount` must equal the order's `totalAmount` (400 otherwise).
+        Emits PaymentInitiated, then PaymentSucceeded or PaymentFailed, and publishes the corresponding
+        Kafka event — consumed asynchronously by Order Service (Feature O5, Event Handler) to transition the
+        order to PAID / PAYMENT_FAILED. `method` is fixed to `"MOCK"` and is not accepted as input; the mock
+        gateway succeeds unless the fractional part of `amount` is exactly .99 (deterministic failure rule for tests).
       operationId: payForOrder
       security:
         - bearerAuth: []
@@ -642,6 +666,20 @@ paths:
       operationId: listAllPayments
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
       responses:
         '200':
           description: Transaction records retrieved successfully
@@ -687,8 +725,11 @@ paths:
       summary: Request a refund for a paid order (Feature PAY3, Command)
       description: |
         Full refunds only — `Refund.amount` always equals the original `Payment.amount`
-        (iter2 domain decision), so `amount` is not accepted as input. Emits RefundRequested,
-        then RefundProcessed or RefundRejected.
+        (iter2 domain decision), so `amount` is not accepted as input. Requires the payment to be
+        SUCCESS and the linked order to be CANCELLED (verified via GET /orders/{id}, forwarding the
+        caller's bearer token); 409 otherwise. This is the only refund path — cancellation does not
+        refund automatically. Emits RefundRequested then RefundProcessed (the mock gateway never rejects)
+        and publishes RefundProcessedEvent.
       operationId: requestRefund
       security:
         - bearerAuth: []
@@ -727,9 +768,14 @@ paths:
         - AI-Customer Service
       summary: Ask a product/order question or return/exchange question (Features AI1, AI2, Command)
       description: |
-        Executes `ConversationSessionAggregate.postMessage(...)`, emitting MessageSent. The agent
-        (via LangChain4j tool calling) may issue REST requests to Product Service and/or Order
-        Service to retrieve grounded data before the LLM (GPT-4o-mini) composes its reply.
+        If no session with `sessionId` exists, one is created for the authenticated user first
+        (`ConversationSessionAggregate.start(userId)`, emitting SessionStarted) — the client generates
+        the `sessionId` (UUID); there is no separate create-session endpoint. Then executes
+        `postMessage(...)`, emitting MessageSent for the user's message and again for the AI reply.
+        The agent (via LangChain4j tool calling) may issue REST requests to Product Service and/or
+        Order Service (forwarding the caller's bearer token) to retrieve grounded data before the
+        LLM (GPT-4o-mini) composes its reply. 404 is returned only when `sessionId` exists but belongs
+        to another user, or is not a valid UUID.
       operationId: sendChatMessage
       security:
         - bearerAuth: []
@@ -820,15 +866,27 @@ paths:
       operationId: listSessions
       security:
         - bearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            maximum: 100
       responses:
         '200':
           description: Sessions retrieved successfully
           content:
             application/json:
               schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/ConversationSessionResponse'
+                $ref: '#/components/schemas/ConversationSessionPageResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -843,6 +901,11 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: |
+        HS256 JWT issued by User Service (POST /users/login) and validated locally by every service with the
+        shared secret `app.jwt.secret`. Claims: `sub` (userId), `role` (CUSTOMER | ADMIN), `exp`.
+        Admin-only operations check `role == ADMIN` (403 otherwise). Server-to-server calls to protected
+        endpoints forward the end user's bearer token unchanged.
 
   schemas:
     # ---------- Shared Value Objects ----------
@@ -1031,6 +1094,7 @@ components:
 
     ProductUpdateRequest:
       type: object
+      description: Partial update — every field is optional; omitted fields are left unchanged.
       properties:
         name:
           type: string
@@ -1039,6 +1103,8 @@ components:
         price:
           $ref: '#/components/schemas/Money'
         imageUrl:
+          type: string
+        categoryId:
           type: string
 
     # ---------- Order Service ----------
@@ -1083,7 +1149,7 @@ components:
           example: "USR-1001"
         status:
           type: string
-          enum: [PENDING, PAID, PAYMENT_FAILED, SHIPPED, CANCELLED]
+          enum: [PENDING, PAID, PAYMENT_FAILED, CANCELLED]
         totalAmount:
           $ref: '#/components/schemas/Money'
         items:
@@ -1256,7 +1322,7 @@ components:
           enum: [USER, AI, AGENT]
         content:
           type: string
-          example: "Your order ORD-5001 is currently SHIPPED and should arrive within 2 business days."
+          example: "Your order ORD-5001 is currently PAID and is being prepared."
         createdAt:
           type: string
           format: date-time
@@ -1277,15 +1343,29 @@ components:
           type: string
           format: date-time
 
+    ConversationSessionPageResponse:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationSessionResponse'
+        page:
+          type: integer
+          example: 0
+        totalElements:
+          type: integer
+          example: 12
+
     # ---------- Shared ----------
     ErrorResponse:
       type: object
       required: [code, message, timestamp]
       description: |
-        `code` follows the shared codes in `6-cqrs-command-query.md` §8 of `4-api-endpoints-v2.md`
+        `code` follows the error table in `4-api-endpoints-v2.md` §8
         (ResourceNotFound, ValidationFailed, Unauthorized, Forbidden, AccountLocked,
-        StockInvariantViolation, OrderStateViolation, PaymentStateViolation) where applicable;
-        a small number of per-service codes (e.g. EmailAlreadyExists) are not in that shared table.
+        StockInvariantViolation, OrderStateViolation, PaymentStateViolation, EmailAlreadyExists,
+        InvalidCredentials, ResetTokenInvalidOrExpired).
       properties:
         code:
           type: string
@@ -1343,7 +1423,7 @@ components:
             message: "This action requires the ADMIN role"
             timestamp: "2026-09-09T19:15:00Z"
     AccountLocked:
-      description: Login blocked after 5 failed attempts within 10 minutes (HTTP 423)
+      description: Login blocked after 5 failed attempts within 10 minutes; the lock lifts automatically after 10 minutes (HTTP 423)
       content:
         application/json:
           schema:
@@ -1363,14 +1443,14 @@ components:
             message: "Insufficient stock for one or more items"
             timestamp: "2026-09-09T19:15:00Z"
     OrderStateViolation:
-      description: Order status transition denied, e.g. cancel after SHIPPED (HTTP 409)
+      description: Order status transition denied, e.g. cancel an order already CANCELLED or PAYMENT_FAILED (HTTP 409)
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
           example:
             code: "OrderStateViolation"
-            message: "Order already SHIPPED or CANCELLED"
+            message: "Order is already CANCELLED or PAYMENT_FAILED"
             timestamp: "2026-09-09T19:15:00Z"
     PaymentStateViolation:
       description: |

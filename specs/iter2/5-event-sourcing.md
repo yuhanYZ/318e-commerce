@@ -38,11 +38,19 @@
 
 | Event Type | Triggering Behavior | Key Payload Fields |
 | :--- | :--- | :--- |
-| `StockItemInitialized` | First-time creation of a stock record for a `productId` not yet tracked (lazy-initialized on the first `adjust()` or `deduct()` call) | `productId`, `initialQuantity` |
 | `StockDeducted` | `deduct(quantity)` — consumes `OrderCreatedEvent` (I2) | `productId`, `quantity`, `orderId` |
 | `StockReleased` | `release(quantity)` — consumes `OrderCancelledEvent` / `PaymentFailedEvent` (I5) | `productId`, `quantity`, `orderId` |
-| `StockAdjusted` | `adjust(delta, reason, adjustedBy)` — manual restock/correction by an Admin (I3) | `productId`, `delta`, `reasonCode`, `adjustedBy` |
+| `StockAdjusted` | `adjust(delta, reason, adjustedBy)` — manual restock/correction by an Admin (I3) | `productId`, `delta`, `reason`, `adjustedBy` |
 
-> **Note:** `StockItemInitialized` is not yet listed as a domain event in `specs/iter2/3-domain-models-inventory-service-ddd.md` §2.5 — it is introduced here because an event-sourced aggregate needs an explicit first event to start its stream. This should be confirmed with the team and folded back into that domain model spec.
+### 3.4 Persistence and Replay
+- Event store table (H2 in development): `stock_event(event_id PK, aggregate_id, aggregate_type, event_type, aggregate_version, occurred_at, payload)` with a unique constraint on (`aggregate_id`, `aggregate_version`) for optimistic concurrency — a concurrent append with a stale version is retried by reloading the stream.
+- Rehydration: load all events for `aggregate_id` ordered by `aggregate_version` and apply them in order; no snapshots in this iteration.
+- Idempotency: I2/I5 handlers derive a deterministic `eventId` from (`orderId`, `productId`, `eventType`) so a redelivered Kafka message is a no-op insert.
+
+### 3.5 Read Model
+- `inventory_read_model(product_id PK, quantity_available, version, updated_at)` is updated synchronously in the same transaction as the event append (single-service, single-database), so I1 reads are effectively consistent; the "eventual (bounded)" label in `6-cqrs-command-query.md` §7 reflects the architectural allowance, not a required delay.
+- The low-stock evaluation (I4) runs on each `StockDeducted` / `StockReleased` / `StockAdjusted` via a Spring Cloud Stream function and updates the CRUD `LowStockAlert` aggregate.
+
+> **Note:** There is no explicit initialization event. A stream starts with its first `StockAdjusted` (an Admin restock, I3) from an implicit quantity of `0` — see `3-domain-models-inventory-service-ddd.md` §2.3.1 invariant 3. A `deduct()` / `release()` against a `productId` with no stream is rejected.
 
 > **Note:** `LowStockAlert` is intentionally out of scope for event sourcing — its open/resolved lifecycle (`LowStockAlertTriggered` / `LowStockAlertResolved`) is simple enough to remain a CRUD aggregate, consistent with §1.

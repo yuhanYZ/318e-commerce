@@ -20,9 +20,9 @@
 ### User Story PAY1: Pay for an Order
 - **As a** Customer, **I want to** pay for a placed order.
 - **Scenario:**
-  i. The user submits payment details for a `PENDING` order to Payment Service.
-  ii. **Inter-Service Validation:** Payment Service sends a REST request to Order Service to confirm the order exists and is unpaid (rejects with HTTP 409 if already paid).
-  iii. Payment Service processes the payment and publishes a `PaymentConfirmedEvent` (or `PaymentFailedEvent`) to Kafka.
+  i. The user submits payment details (`orderId`, `amount`) for a `PENDING` order to Payment Service. `amount` must equal the order's `totalAmount` (rejects with HTTP 400 `ValidationFailed` otherwise).
+  ii. **Inter-Service Validation:** Payment Service sends a REST request to Order Service (`GET /orders/{id}`, forwarding the caller's bearer token) to confirm the order exists and its status is exactly `PENDING`. Any other status — including `PAYMENT_FAILED`, which cannot be retried — is rejected with HTTP 409 `PaymentStateViolation`.
+  iii. Payment Service processes the payment through the mock gateway (`method = "MOCK"`; succeeds by default — see `3-domain-models-payment-service-ddd.md` §2.3.1 for the deterministic failure rule) and publishes a `PaymentConfirmedEvent` (on `PaymentSucceeded`) or `PaymentFailedEvent` (on `PaymentFailed`) to Kafka.
 
 ### User Story PAY2: View Payment Status
 - **As a** Customer, **I want to** check the payment status of my order.
@@ -33,9 +33,9 @@
 ### User Story PAY3: Request a Refund
 - **As a** Customer, **I want to** request a refund for a paid order.
 - **Scenario:**
-  i. The user requests a refund for a successfully paid order.
-  ii. **Inter-Service Validation:** Payment Service sends a REST request to Order Service to confirm the order is eligible (e.g., linked to a `Cancelled`/`Returned` order).
-  iii. If eligible, Payment Service processes the refund, updates status to `REFUNDED`, and publishes a `RefundProcessedEvent`; otherwise it rejects with HTTP 409.
+  i. The user requests a refund for a payment whose status is `SUCCESS`. Refunds are always for the full `Payment.amount` (no partial refunds). This is the only refund path — cancelling an order does not refund automatically.
+  ii. **Inter-Service Validation:** Payment Service sends a REST request to Order Service (`GET /orders/{id}`, forwarding the caller's bearer token) to confirm the linked order's status is `CANCELLED`.
+  iii. If eligible, Payment Service processes the refund, marks the `Refund` as `PROCESSED` and the `Payment` as `REFUNDED`, and publishes a `RefundProcessedEvent`; otherwise (payment not `SUCCESS`, order not `CANCELLED`, or an active refund already exists) it rejects with HTTP 409 `PaymentStateViolation`.
 
 ### User Story PAY4: View Payment / Refund History
 - **As an** Admin, **I want to** view all payment and refund transactions.

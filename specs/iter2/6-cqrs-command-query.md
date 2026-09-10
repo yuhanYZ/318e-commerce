@@ -105,12 +105,13 @@ This document defines how the 318 E-Commerce Platform applies CQRS, including:
 | `PlaceOrderCommand` | `OrderAggregate` | O1 | `OrderPlaced` | CRUD |
 | `CancelOrderCommand` | `OrderAggregate` | O4 | `OrderCancelled` | CRUD |
 | `UpdateOrderOnPaymentEventCommand` | `OrderAggregate` | O5 | `OrderPaid` or `OrderPaymentFailed` | CRUD |
-| `AdjustStockCommand` | `StockItemAggregate` | I3 | `StockItemInitialized` (first call) + `StockAdjusted`, plus `LowStockAlertResolved` on `LowStockAlertAggregate` if the threshold is cleared | Event store (StockItem) + CRUD (LowStockAlert) |
-| `DeductStockOnOrderCreatedCommand` | `StockItemAggregate` | I2 | `StockItemInitialized` (first call, rare) + `StockDeducted`, plus `LowStockAlertTriggered` on `LowStockAlertAggregate` if the threshold is crossed | Event store (StockItem) + CRUD (LowStockAlert) |
-| `ReleaseStockOnOrderCancelledCommand` | `StockItemAggregate` | I5 | `StockReleased`, plus `LowStockAlertResolved` on `LowStockAlertAggregate` if the threshold is cleared | Event store (StockItem) + CRUD (LowStockAlert) |
-| `InitiatePaymentCommand` | `PaymentAggregate` | PAY1 | `PaymentInitiated`, then `PaymentSucceeded` or `PaymentFailed` | CRUD |
-| `RequestRefundCommand` | `RefundAggregate` + `PaymentAggregate` | PAY3 | `RefundRequested`, then `RefundProcessed` or `RefundRejected` | CRUD |
-| `PostConversationMessageCommand` | `ConversationSessionAggregate` | AI1, AI2 | `MessageSent` | CRUD |
+| `AdjustStockCommand` | `StockItemAggregate` | I3 | `StockAdjusted` (the first call for a `productId` starts its stream), plus `LowStockAlertTriggered` / `LowStockAlertResolved` on `LowStockAlertAggregate` if the threshold is crossed / cleared | Event store (StockItem) + CRUD (LowStockAlert) |
+| `DeductStockOnOrderCreatedCommand` | `StockItemAggregate` | I2 | `StockDeducted`, plus `LowStockAlertTriggered` on `LowStockAlertAggregate` if the threshold is crossed (rejected and logged if the `productId` has no stream or stock is insufficient) | Event store (StockItem) + CRUD (LowStockAlert) |
+| `ReleaseStockOnOrderCancelledCommand` | `StockItemAggregate` | I5 | `StockReleased`, plus `LowStockAlertResolved` on `LowStockAlertAggregate` if the threshold is cleared (triggered by `OrderCancelledEvent` or `PaymentFailedEvent`) | Event store (StockItem) + CRUD (LowStockAlert) |
+| `InitiatePaymentCommand` | `PaymentAggregate` | PAY1 | `PaymentInitiated`, then `PaymentSucceeded` or `PaymentFailed` (mock gateway; fails only when `amount` fraction is `.99`) | CRUD |
+| `RequestRefundCommand` | `RefundAggregate` + `PaymentAggregate` | PAY3 | `RefundRequested`, then `RefundProcessed` (always, with the mock gateway); requires payment `SUCCESS` and order `CANCELLED` | CRUD |
+| `StartSessionCommand` | `ConversationSessionAggregate` | AI1, AI2 | `SessionStarted` — issued implicitly by `PostConversationMessageCommand` when the `sessionId` does not yet exist | CRUD |
+| `PostConversationMessageCommand` | `ConversationSessionAggregate` | AI1, AI2 | `MessageSent` (×2: the user's message and the AI reply) | CRUD |
 | `EscalateSessionCommand` | `ConversationSessionAggregate` | AI3 | `SessionEscalated` | CRUD |
 
 Command responses return outcome metadata (success/failure, IDs, version). They do not return read model projections.
@@ -127,9 +128,25 @@ Command responses return outcome metadata (success/failure, IDs, version). They 
 | `SearchProductsQuery(keyword)` | P3 | Product CRUD store | Strong (local DB) | |
 | `ViewOrderStatusQuery(orderId)` | O2 | Order CRUD store | Strong (local DB) | |
 | `ViewOrderHistoryQuery(userId)` | O3 | Order CRUD store | Strong (local DB) | |
-| `CheckStockAvailabilityQuery(productId)` | I1 | `inventory_read_model` | Eventual (bounded) | Projected from the `StockItemAggregate` event stream |
+| `CheckStockAvailabilityQuery(productId)` | I1 | `inventory_read_model` | Eventual (bounded) | Projected from the `StockItemAggregate` event stream; updated in the same transaction as the event append in this iteration (see `5-event-sourcing.md` §3.5). Returns 404 for an untracked `productId` |
 | `ListLowStockAlertsQuery` | I4 | LowStockAlert CRUD store | Strong (local DB) | `LowStockAlertAggregate` is CRUD, not projected from events |
 | `ViewPaymentStatusQuery(orderId)` | PAY2 | Payment CRUD store | Strong (local DB) | |
 | `ViewPaymentHistoryQuery` | PAY4 | Payment + Refund CRUD store | Strong (local DB) | |
 | `ListConversationSessionsQuery` | AI4 | ConversationSession CRUD store | Strong (local DB) | |
 | `GetSessionMessagesQuery(sessionId)` | AI4 | ConversationSession CRUD store | Strong (local DB) | |
+
+---
+
+## 8. Kafka Integration Event Catalog
+
+Domain events are internal to a service. The subset below is translated 1:1 into Kafka integration events by the publishing service's infrastructure layer (Spring Cloud Stream Kafka binder, one topic per event type, JSON payload).
+
+| Kafka Event | Topic | Publisher (Domain Event) | Consumer(s) → Command | Payload |
+| :--- | :--- | :--- | :--- | :--- |
+| `OrderCreatedEvent` | `order.created` | Order (`OrderPlaced`) | Inventory → `DeductStockOnOrderCreatedCommand` | `orderId`, `userId`, `items[{productId, quantity}]`, `occurredAt` |
+| `OrderCancelledEvent` | `order.cancelled` | Order (`OrderCancelled`) | Inventory → `ReleaseStockOnOrderCancelledCommand` | `orderId`, `items[{productId, quantity}]`, `occurredAt` |
+| `PaymentConfirmedEvent` | `payment.confirmed` | Payment (`PaymentSucceeded`) | Order → `UpdateOrderOnPaymentEventCommand` | `paymentId`, `orderId`, `occurredAt` |
+| `PaymentFailedEvent` | `payment.failed` | Payment (`PaymentFailed`) | Order → `UpdateOrderOnPaymentEventCommand`; Inventory → `ReleaseStockOnOrderCancelledCommand` | `paymentId`, `orderId`, `occurredAt` |
+| `RefundProcessedEvent` | `payment.refunded` | Payment (`RefundProcessed`) | *(none in this iteration)* | `refundId`, `paymentId`, `orderId`, `occurredAt` |
+
+All consumers are idempotent on the event's business key (`orderId` [+ `productId`]). The iter1 `StockUpdatedEvent` and `StockReservationFailedEvent` are **not** part of this catalog.

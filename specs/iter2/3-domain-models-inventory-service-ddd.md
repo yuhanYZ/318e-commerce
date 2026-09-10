@@ -2,6 +2,7 @@
 
 Evolution from `specs/3-domain-models.md`:
 - `StockItem` promoted to an aggregate root; `quantityAvailable` re-typed as a validated `Quantity` value object.
+- `StockItem` is the only **event-sourced** aggregate in the system (see `5-event-sourcing.md`). Its identity `StockItemId` takes the same value as `ProductId` — one product maps to exactly one event stream — so `StockItemId` and `ProductId` are interchangeable for stream lookup.
 - `lowStockThreshold` **removed from `StockItem`** — per the earlier decision, the threshold is a single global system-wide value rather than a per-product field. It now lives as configuration read by `InventoryPolicyService`.
 - `StockAdjustmentLog` kept as a plain `Entity` (append-only audit record, no lifecycle of its own).
 - `LowStockAlert` promoted to its own small aggregate, since its open/resolved lifecycle is a real invariant (no duplicate open alerts per stock item).
@@ -94,11 +95,16 @@ Evolution from `specs/3-domain-models.md`:
 **Invariants**
 1. `quantityAvailable >= 0` at all times.
 2. A deduction cannot take `quantityAvailable` below zero.
+3. There is no explicit "initialize" event. A `StockItem` comes into existence with the **first `StockAdjusted`** event on its stream (an Admin restock, I3), starting from `quantityAvailable = 0`. `deduct()` or `release()` on a `productId` with no stream is a violation of invariant 2 (rejected as HTTP 409 `StockInvariantViolation` / logged for event handlers); `GET /inventory/{productId}` on such a product returns HTTP 404.
 
 **Behaviors**
-- `deduct(quantity)` — emits `StockDeducted`
-- `release(quantity)` — emits `StockReleased`
+- `deduct(quantity, orderId)` — emits `StockDeducted`
+- `release(quantity, orderId)` — emits `StockReleased`
 - `adjust(delta, reason, adjustedBy)` — appends a `StockAdjustmentLog` entry, emits `StockAdjusted`
+
+**Event-Sourcing Note**
+- The aggregate is rehydrated by replaying its event stream; `quantityAvailable` is never persisted directly on the write side. The `inventory_read_model` projection (I1) and the low-stock evaluation (I4) are updated from the same events.
+- `StockAdjustmentLog` is retained as a convenience audit entity but is fully derivable from `StockAdjusted` events.
 
 #### 2.3.2 `LowStockAlertAggregate` (root: `LowStockAlert`)
 
@@ -124,7 +130,20 @@ Evolution from `specs/3-domain-models.md`:
 
 | Method | Parameters | Returns | Description |
 | :--- | :--- | :--- | :--- |
-| `isBelowThreshold` | `quantityAvailable: Quantity` | `boolean` | Compares available stock against the single global `lowStockThreshold` configuration |
+| `isBelowThreshold` | `quantityAvailable: Quantity` | `boolean` | Compares available stock against the single global `lowStockThreshold` configuration (`app.inventory.low-stock-threshold`, default `5`) |
+
+---
+
+### 2.4.2 Integration Events (Kafka)
+
+| Direction | Kafka Event | Handled By | Aggregate Behavior |
+| :--- | :--- | :--- | :--- |
+| Consumed | `OrderCreatedEvent` (from Order Service) | I2 handler | `deduct(quantity, orderId)` per item |
+| Consumed | `OrderCancelledEvent` (from Order Service) | I5 handler | `release(quantity, orderId)` per item |
+| Consumed | `PaymentFailedEvent` (from Payment Service) | I5 handler | `release(quantity, orderId)` per item — Inventory resolves the order's items from its own `StockDeducted` history for that `orderId`, so `PaymentFailedEvent` only needs to carry `orderId` |
+| Published | *(none)* | — | `StockDeducted` / `StockReleased` / `StockAdjusted` / `LowStockAlert*` are internal domain events; the `StockUpdatedEvent` from iter1 has no consumer and is not published |
+
+Both I2 and I5 handlers are idempotent per (`orderId`, `productId`): a redelivered Kafka message must not deduct or release twice.
 
 ---
 

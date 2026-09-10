@@ -28,15 +28,15 @@
 - **As the** Inventory Service (System), **I want to** deduct stock automatically when an order is created.
 - **Scenario:**
   i. Order Service publishes an `OrderCreatedEvent` to Kafka after creating an order.
-  ii. Inventory Service consumes the event and deducts the ordered quantity from stock.
-  iii. If sufficient, Inventory Service publishes a `StockUpdatedEvent`; if a race condition leaves stock insufficient, it publishes a `StockReservationFailedEvent` so Order Service can roll back the order.
+  ii. Inventory Service consumes the event and executes `StockItemAggregate.deduct(quantity)` for each item.
+  iii. On success, the aggregate emits `StockDeducted` and the event is appended to the event store. If a race condition leaves stock insufficient (or the `productId` is not yet tracked), the deduction is rejected and logged — no compensating event is published. The synchronous stock check performed by Order Service before order creation (O1) is the primary safeguard for this milestone.
 
 ### User Story I3: Adjust Stock (Restock)
 - **As an** Admin, **I want to** manually adjust stock quantities.
 - **Scenario:**
   i. The Admin submits a stock adjustment (positive or negative) for a product to Inventory Service.
-  ii. Inventory Service validates the adjustment would not make stock negative (rejects with HTTP 400 otherwise).
-  iii. Inventory Service updates the stock quantity and logs the change.
+  ii. Inventory Service validates the adjustment would not make stock negative (rejects with HTTP 409 `StockInvariantViolation` otherwise; a malformed body is HTTP 400 `ValidationFailed`).
+  iii. Inventory Service executes `StockItemAggregate.adjust(delta, reason, adjustedBy)`, emitting `StockAdjusted`. The first adjustment for a previously untracked `productId` starts that product's event stream (see `3-domain-models-inventory-service-ddd.md` §2.3.1).
 
 ### User Story I4: Receive Low-Stock Alert
 - **As an** Admin, **I want to** be alerted when stock falls below a configured threshold.

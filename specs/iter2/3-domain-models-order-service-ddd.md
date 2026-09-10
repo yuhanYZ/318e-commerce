@@ -20,7 +20,7 @@ Evolution from `specs/3-domain-models.md`:
 | `ProductId` | Value Object | Typed reference to a `Product` (cross-service ID only) |
 | `Money` | Value Object | Amount used for `totalAmount` and `unitPrice` |
 | `Quantity` | Value Object | Non-negative validated quantity |
-| `OrderStatus` | Value Object | `PENDING`, `PAID`, `PAYMENT_FAILED`, `SHIPPED`, `CANCELLED` |
+| `OrderStatus` | Value Object | `PENDING`, `PAID`, `PAYMENT_FAILED`, `CANCELLED` |
 | `OrderPlaced` | Domain Event | Emitted by `OrderAggregate` on successful order placement (O1) |
 | `OrderPaid` | Domain Event | Emitted by `OrderAggregate` on consuming `PaymentConfirmedEvent` (O5) |
 | `OrderPaymentFailed` | Domain Event | Emitted by `OrderAggregate` on consuming `PaymentFailedEvent` (O5) |
@@ -90,7 +90,7 @@ Evolution from `specs/3-domain-models.md`:
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `value` | `Enum` | `PENDING`, `PAID`, `PAYMENT_FAILED`, `SHIPPED`, `CANCELLED` |
+| `value` | `Enum` | `PENDING`, `PAID`, `PAYMENT_FAILED`, `CANCELLED` |
 
 ---
 
@@ -109,15 +109,24 @@ Evolution from `specs/3-domain-models.md`:
 | `updatedAt` | `LocalDateTime` | Last status change timestamp | Auto-updated |
 
 **Invariants**
-1. `totalAmount` equals the sum of all `OrderItem.unitPrice × OrderItem.quantity`.
-2. Status transitions are restricted to: `PENDING → PAID`, `PENDING → PAYMENT_FAILED`, `{PENDING, PAID} → CANCELLED` (only while not yet `SHIPPED`).
-3. `SHIPPED` and `CANCELLED` are terminal statuses.
+1. `totalAmount` equals the sum of all `OrderItem.unitPrice × OrderItem.quantity`. Each `unitPrice` is a snapshot of the Product Service price at placement time.
+2. Status transitions are restricted to: `PENDING → PAID`, `PENDING → PAYMENT_FAILED`, `{PENDING, PAID} → CANCELLED`.
+3. `PAYMENT_FAILED` and `CANCELLED` are terminal statuses — no further transitions (no re-payment, no cancellation) are possible once reached.
+4. Shipping is out of scope for this iteration; there is no `SHIPPED` status.
 
 **Behaviors**
 - `place(userId, items)` — emits `OrderPlaced`
-- `markPaid()` — emits `OrderPaid`
-- `markPaymentFailed()` — emits `OrderPaymentFailed`
-- `cancel()` — emits `OrderCancelled`
+- `markPaid()` — only from `PENDING`; emits `OrderPaid`
+- `markPaymentFailed()` — only from `PENDING`; emits `OrderPaymentFailed`
+- `cancel()` — only from `PENDING` or `PAID`; emits `OrderCancelled`
+
+**Integration Events (Kafka)**
+
+| Domain Event | Published Kafka Event | Consumer(s) |
+| :--- | :--- | :--- |
+| `OrderPlaced` | `OrderCreatedEvent` (`orderId`, `userId`, `items[{productId, quantity}]`) | Inventory Service (I2) |
+| `OrderCancelled` | `OrderCancelledEvent` (`orderId`, `items[{productId, quantity}]`) | Inventory Service (I5) |
+| `OrderPaid` / `OrderPaymentFailed` | *(none — internal only)* | — |
 
 ---
 

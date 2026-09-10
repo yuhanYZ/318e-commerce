@@ -95,14 +95,20 @@ Evolution from `specs/3-domain-models.md`:
 | `createdAt` | `LocalDateTime` | Payment creation timestamp | Auto-generated |
 
 **Invariants**
-1. `amount.amount >= 0`.
-2. `status` follows `PENDING → SUCCESS | FAILED`; `SUCCESS → REFUNDED` only once an associated `Refund` is processed.
+1. `amount.amount >= 0`, and `amount` must equal the linked order's `totalAmount` (validated by the application service against Order Service before `initiate`; mismatch → HTTP 400 `ValidationFailed`).
+2. `status` follows `PENDING → SUCCESS | FAILED`; `SUCCESS → REFUNDED` only once an associated `Refund` is processed. `FAILED` and `REFUNDED` are terminal.
+3. A payment may only be initiated for an order whose status is exactly `PENDING` (checked via `GET /orders/{id}`); otherwise HTTP 409 `PaymentStateViolation`.
+4. At most one non-`FAILED` `Payment` per `orderId`.
+
+**Mock Gateway Rule (deterministic, for testability)**
+- `method` is always `"MOCK"`. The gateway succeeds by default.
+- The gateway simulates a failure when the fractional part of `amount.amount` is exactly `.99` (e.g., `19.99`), producing `PaymentFailed`. This rule exists solely so that the `PaymentFailedEvent` path (O5, I5) can be exercised in integration tests.
 
 **Behaviors**
 - `initiate(orderId, amount)` — emits `PaymentInitiated`
-- `markSucceeded()` — emits `PaymentSucceeded`
-- `markFailed()` — emits `PaymentFailed`
-- `markRefunded()` — sets `status = REFUNDED` when the linked `Refund` completes (no separate event; see `RefundProcessed`)
+- `markSucceeded()` — only from `PENDING`; emits `PaymentSucceeded`
+- `markFailed()` — only from `PENDING`; emits `PaymentFailed`
+- `markRefunded()` — only from `SUCCESS`; sets `status = REFUNDED` when the linked `Refund` completes (no separate event; see `RefundProcessed`)
 
 #### 2.3.2 `RefundAggregate` (root: `Refund`)
 
@@ -118,11 +124,22 @@ Evolution from `specs/3-domain-models.md`:
 **Invariants**
 1. `amount` must equal the associated `Payment.amount` (no partial refunds).
 2. At most one active (non-`REJECTED`) `Refund` per `Payment`.
+3. A refund may only be requested when the `Payment` is `SUCCESS` **and** the linked order is `CANCELLED` (checked by the application service via `GET /orders/{id}`); otherwise HTTP 409 `PaymentStateViolation`.
+4. With the mock gateway a requested refund is always processed immediately (`REQUESTED → PROCESSED` in the same command). `REJECTED` / `RefundRejected` are reserved for a future real-gateway integration and are never produced in this iteration.
 
 **Behaviors**
 - `request(paymentId, amount)` — emits `RefundRequested`
-- `process(now)` — emits `RefundProcessed`
-- `reject(now)` — emits `RefundRejected`
+- `process(now)` — only from `REQUESTED`; emits `RefundProcessed`
+- `reject(now)` — only from `REQUESTED`; emits `RefundRejected` *(reserved, unused)*
+
+**Integration Events (Kafka)**
+
+| Domain Event | Published Kafka Event | Consumer(s) |
+| :--- | :--- | :--- |
+| `PaymentSucceeded` | `PaymentConfirmedEvent` (`paymentId`, `orderId`) | Order Service (O5) |
+| `PaymentFailed` | `PaymentFailedEvent` (`paymentId`, `orderId`) | Order Service (O5), Inventory Service (I5) |
+| `RefundProcessed` | `RefundProcessedEvent` (`refundId`, `paymentId`, `orderId`) | *(no consumer in this iteration; published for audit/analytics)* |
+| `PaymentInitiated`, `RefundRequested`, `RefundRejected` | *(none — internal only)* | — |
 
 ---
 

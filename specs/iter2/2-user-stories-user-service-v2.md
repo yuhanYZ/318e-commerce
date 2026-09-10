@@ -16,6 +16,14 @@
 
 ---
 
+## Roles and Admin Provisioning
+
+- Registration (U1) always creates a `CUSTOMER` account. There is no self-service path to the `ADMIN` role.
+- User Service seeds exactly one `ADMIN` account at startup from configuration (`app.admin.email`, `app.admin.password`); the seed is idempotent and skipped if that email already exists.
+- Every issued JWT (U2) is signed with HS256 using a shared secret configured in all six services (`app.jwt.secret`) and carries `sub = userId` and `role` claims. Downstream services enforce Admin-only endpoints by checking the `role` claim — no callback to User Service is needed.
+
+---
+
 ## User Service
 
 ### User Story U1: Register an Account
@@ -30,7 +38,7 @@
 - **Scenario:**
   i. The user submits email and password to User Service.
   ii. User Service verifies the credentials against the stored account.
-  iii. If valid, User Service issues a JWT auth token; after 5 consecutive failures within 10 minutes, the account is temporarily locked.
+  iii. If valid, User Service issues a JWT auth token and resets the failure counter; after 5 consecutive failures within 10 minutes, the account is locked (HTTP 423 `AccountLocked`) for 10 minutes, after which login is permitted again and the counter restarts. A `DEACTIVATED` account can never log in (HTTP 401).
 
 ### User Story U3: View / Update Profile
 - **As a** Customer, **I want to** view and update my profile (name, address, phone).
