@@ -1,26 +1,27 @@
 package com.ecommerce.userservice.domain;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-import java.util.UUID;
+import java.time.Instant;
 
 /**
- * Represents a registered account (Customer or Admin).
- * Maps to the {@code User} domain class in specs/3-domain-models.md section 2.1.
+ * UserAggregate (CRUD) — specs/iter2/3-domain-models-user-service-ddd.md.
+ * Table name is "app_user" (not "user") because USER is a reserved word in several SQL dialects,
+ * H2 included.
  */
 @Entity
-@Table(name = "users")
+@Table(name = "app_user")
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class User {
 
     @Id
@@ -29,7 +30,6 @@ public class User {
     @Column(nullable = false, unique = true)
     private String email;
 
-    /** BCrypt hash - the plaintext password is never stored. */
     @Column(nullable = false)
     private String passwordHash;
 
@@ -40,36 +40,23 @@ public class User {
     private String phone;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private Role role = Role.CUSTOMER;
+    @Column(nullable = false)
+    private UserRole role;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private AccountStatus status = AccountStatus.ACTIVE;
-
-    /** Consecutive failed login count within the current lockout window (U2). Reset on success. */
     @Column(nullable = false)
-    @Builder.Default
-    private int failedLoginAttempts = 0;
+    private UserStatus status;
 
-    /** Timestamp of the first failed attempt in the current failure window; null when no failures are pending. */
-    private LocalDateTime firstFailedAttemptAt;
+    @Column(nullable = false)
+    private int failedLoginAttempts;
 
-    /** While {@code status == LOCKED}, the account auto-unlocks once this timestamp has passed. */
-    private LocalDateTime lockedUntil;
+    /** Non-null while the account is locked; auto-unlock is evaluated by comparing to now(). */
+    private Instant lockedUntil;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @Column(nullable = false)
+    private Instant createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        if (id == null || id.isBlank()) {
-            id = UUID.randomUUID().toString();
-        }
-        if (createdAt == null) {
-            createdAt = LocalDateTime.now();
-        }
+    public boolean isCurrentlyLocked() {
+        return lockedUntil != null && lockedUntil.isAfter(Instant.now());
     }
 }

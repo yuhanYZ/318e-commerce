@@ -1,32 +1,28 @@
 package com.ecommerce.userservice.domain;
 
-import jakarta.persistence.*;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
+import jakarta.persistence.Column;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
+import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
-import java.time.LocalDateTime;
-import java.util.UUID;
+import java.time.Instant;
 
 /**
- * A time-limited token issued for a password reset request (U4).
- * Maps to the {@code PasswordResetToken} domain class in specs/3-domain-models.md section 2.2.
+ * PasswordResetTokenAggregate (CRUD) — specs/iter2/3-domain-models-user-service-ddd.md.
  */
 @Entity
-@Table(name = "password_reset_tokens")
+@Table(name = "password_reset_token")
 @Getter
 @Setter
-@Builder
 @NoArgsConstructor
-@AllArgsConstructor
 public class PasswordResetToken {
 
     @Id
     private String id;
 
-    /** Cross-service-style reference to {@link User#getId()} - no JPA foreign key, per the Database-per-Service principle. */
     @Column(nullable = false)
     private String userId;
 
@@ -34,16 +30,11 @@ public class PasswordResetToken {
     private String token;
 
     @Column(nullable = false)
-    private LocalDateTime expiresAt;
+    private Instant expiresAt;
 
     @Column(nullable = false)
-    @Builder.Default
-    private boolean used = false;
+    private boolean used;
 
-    @PrePersist
-    protected void onCreate() {
-        if (id == null || id.isBlank()) {
-            id = UUID.randomUUID().toString();
-        }
-    }
+    @Column(nullable = false)
+    private Instant createdAt;
 }

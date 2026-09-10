@@ -7,6 +7,6 @@ import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, String> {
 
-    /** PAY2. */
-    Optional<Payment> findByOrderId(String orderId);
+    /** "At most one non-FAILED Payment per orderId" (invariant 4) — most recent one wins for PAY2. */
+    Optional<Payment> findFirstByOrderIdOrderByCreatedAtDesc(String orderId);
 }

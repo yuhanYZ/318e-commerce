@@ -3,51 +3,63 @@ package com.ecommerce.inventoryservice.domain;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-import java.time.LocalDateTime;
-import java.util.UUID;
+import java.time.Instant;
 
 /**
- * Represents one triggered low-stock alert (I4), per specs/3-domain-models.md
- * section 5.3. {@code resolvedAt} stays null while the alert is active;
- * InventoryService only opens a new alert for a StockItem once any existing
- * unresolved alert for it has been resolved, per User Story I4 step iii
- * ("no duplicate trigger before resolution").
+ * {@code LowStockAlertAggregate} (root: LowStockAlert) — CRUD, not event-sourced, per
+ * specs/iter2/3-domain-models-inventory-service-ddd.md §2.3.2 and 5-event-sourcing.md §1/§56.
+ * Invariant: at most one unresolved (resolvedAt == null) alert per stockItemId at a time.
  */
 @Entity
-@Table(name = "low_stock_alerts")
-@Getter
-@Setter
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "low_stock_alert")
 public class LowStockAlert {
 
     @Id
     private String id;
 
-    @Column(nullable = false)
+    @Column(name = "stock_item_id", nullable = false)
     private String stockItemId;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime triggeredAt;
+    @Column(name = "triggered_at", nullable = false)
+    private Instant triggeredAt;
 
-    private LocalDateTime resolvedAt;
+    @Column(name = "resolved_at")
+    private Instant resolvedAt;
 
-    @PrePersist
-    protected void onCreate() {
-        if (id == null || id.isBlank()) {
-            id = UUID.randomUUID().toString();
-        }
-        if (triggeredAt == null) {
-            triggeredAt = LocalDateTime.now();
-        }
+    protected LowStockAlert() {
+        // JPA
+    }
+
+    public LowStockAlert(String id, String stockItemId, Instant triggeredAt) {
+        this.id = id;
+        this.stockItemId = stockItemId;
+        this.triggeredAt = triggeredAt;
+        this.resolvedAt = null;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getStockItemId() {
+        return stockItemId;
+    }
+
+    public Instant getTriggeredAt() {
+        return triggeredAt;
+    }
+
+    public Instant getResolvedAt() {
+        return resolvedAt;
+    }
+
+    public void resolve(Instant now) {
+        this.resolvedAt = now;
+    }
+
+    public boolean isOpen() {
+        return resolvedAt == null;
     }
 }

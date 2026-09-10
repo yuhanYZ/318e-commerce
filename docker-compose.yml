@@ -18,14 +18,22 @@
 #   docker compose down         # stop everything (add -v to also wipe topics)
 #
 # Requires Docker Desktop installed and running. After `docker compose up -d`,
-# start the five services as usual in IntelliJ - their Kafka producers/
-# consumers will connect automatically (they already retry in the background
-# per each service's OrderEventPublisher/InventoryEventPublisher/etc. javadocs).
+# start the five services with the "kafka" Spring profile active (e.g. IntelliJ
+# Run Configuration -> Active profiles: kafka, or
+# --spring.profiles.active=kafka / SPRING_PROFILES_ACTIVE=kafka) - this is
+# what actually turns on their Kafka producer/consumer beans and sets
+# app.kafka.enabled=true (see each service's application.yml "kafka"-profile
+# document). Without that profile, the services run exactly as they do under
+# `mvn test`: zero Kafka activity, by design.
 #
 # kafka-ui (http://localhost:8090 once started) lets you watch topics/messages
 # live - e.g. place an order via order-service's POST /orders and watch the
-# "order-created" topic receive a message, which is the easiest way to prove
+# "order.created" topic receive a message, which is the easiest way to prove
 # the O1 -> I2 event flow is actually wired up end-to-end for your demo/report.
+# (Producers use Spring Cloud Stream's StreamBridge; consumers are
+# java.util.function.Consumer<T> @Bean methods in each service's
+# config.KafkaConsumerConfig - see 6-cqrs-command-query.md §8 for the full
+# topic/payload catalog.)
 
 services:
   kafka:

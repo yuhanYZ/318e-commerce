@@ -1,69 +1,70 @@
 package com.ecommerce.productservice.controller;
 
-import com.ecommerce.productservice.dto.request.ProductCreateRequest;
-import com.ecommerce.productservice.dto.request.ProductUpdateRequest;
-import com.ecommerce.productservice.dto.response.ProductDetailResponse;
-import com.ecommerce.productservice.dto.response.ProductPageResponse;
-import com.ecommerce.productservice.dto.response.ProductResponse;
-import com.ecommerce.productservice.service.ProductService;
+import com.ecommerce.productservice.dto.ProductCreateRequest;
+import com.ecommerce.productservice.dto.ProductDetailResponse;
+import com.ecommerce.productservice.dto.ProductPageResponse;
+import com.ecommerce.productservice.dto.ProductResponse;
+import com.ecommerce.productservice.dto.ProductUpdateRequest;
+import com.ecommerce.productservice.service.ProductCommandService;
+import com.ecommerce.productservice.service.ProductQueryService;
 import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * Presentation layer for the Product Service. Performs basic request/response
- * plumbing only - no business logic - per specs/1-technical-architecture.md.
- * Endpoint shapes follow specs/4-api-endpoints.md and specs/openapi-contract.yaml.
- */
+/** specs/iter2/openapi-contract-v2.yaml paths /products/*. */
 @RestController
-@RequestMapping("/products")
-@RequiredArgsConstructor
+@RequestMapping("/api/v1/products")
 public class ProductController {
 
-    private final ProductService productService;
+    private final ProductCommandService commandService;
+    private final ProductQueryService queryService;
 
-    /** P1. */
+    public ProductController(ProductCommandService commandService, ProductQueryService queryService) {
+        this.commandService = commandService;
+        this.queryService = queryService;
+    }
+
     @GetMapping
-    public ResponseEntity<ProductPageResponse> browseProducts(
-            @RequestParam(required = false) String categoryId,
-            @RequestParam(defaultValue = "0") int page,
-            @RequestParam(defaultValue = "20") int size) {
-        return ResponseEntity.ok(productService.browseProducts(categoryId, page, size));
+    public ProductPageResponse browseProducts(@RequestParam(required = false) String categoryId,
+                                               @RequestParam(defaultValue = "0") int page,
+                                               @RequestParam(defaultValue = "20") int size) {
+        return queryService.browseProducts(categoryId, page, size);
     }
 
-    /** P3. Must be registered before /{id} so "search" is never matched as a product id. */
     @GetMapping("/search")
-    public ResponseEntity<List<ProductResponse>> searchProducts(@RequestParam("q") String keyword) {
-        return ResponseEntity.ok(productService.searchProducts(keyword));
+    public List<ProductResponse> searchProducts(@RequestParam String q) {
+        return queryService.searchProducts(q);
     }
 
-    /** P2. */
     @GetMapping("/{id}")
-    public ResponseEntity<ProductDetailResponse> getProductById(@PathVariable String id) {
-        return ResponseEntity.ok(productService.getProductDetail(id));
+    public ProductDetailResponse getProductById(@PathVariable String id) {
+        return queryService.getProductById(id);
     }
 
-    /** P4 (create, Admin only - enforced in SecurityConfig). */
     @PostMapping
-    public ResponseEntity<ProductResponse> createProduct(@Valid @RequestBody ProductCreateRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(productService.createProduct(request));
+    @ResponseStatus(HttpStatus.CREATED)
+    public ProductResponse createProduct(@Valid @RequestBody ProductCreateRequest request) {
+        return commandService.create(request);
     }
 
-    /** P4 (update, Admin only). */
     @PutMapping("/{id}")
-    public ResponseEntity<ProductResponse> updateProduct(
-            @PathVariable String id,
-            @Valid @RequestBody ProductUpdateRequest request) {
-        return ResponseEntity.ok(productService.updateProduct(id, request));
+    public ProductResponse updateProduct(@PathVariable String id, @Valid @RequestBody ProductUpdateRequest request) {
+        return commandService.update(id, request);
     }
 
-    /** P4 (deactivate, Admin only). */
     @PatchMapping("/{id}/deactivate")
-    public ResponseEntity<ProductResponse> deactivateProduct(@PathVariable String id) {
-        return ResponseEntity.ok(productService.deactivateProduct(id));
+    public ProductResponse deactivateProduct(@PathVariable String id) {
+        return commandService.deactivate(id);
     }
 }

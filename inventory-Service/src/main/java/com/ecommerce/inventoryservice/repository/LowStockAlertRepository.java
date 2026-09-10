@@ -8,9 +8,7 @@ import java.util.Optional;
 
 public interface LowStockAlertRepository extends JpaRepository<LowStockAlert, String> {
 
-    /** At most one unresolved alert per StockItem at a time (I4 step iii). */
-    Optional<LowStockAlert> findByStockItemIdAndResolvedAtIsNull(String stockItemId);
+    List<LowStockAlert> findByResolvedAtIsNull();
 
-    /** I4: list active alerts. */
-    List<LowStockAlert> findAllByResolvedAtIsNull();
+    Optional<LowStockAlert> findByStockItemIdAndResolvedAtIsNull(String stockItemId);
 }

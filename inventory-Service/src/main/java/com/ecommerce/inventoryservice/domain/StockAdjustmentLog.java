@@ -3,37 +3,26 @@ package com.ecommerce.inventoryservice.domain;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
-import java.time.LocalDateTime;
-import java.util.UUID;
+import java.time.Instant;
 
 /**
- * Records a single Admin stock adjustment (I3), per specs/3-domain-models.md
- * section 5.2. Write-only audit trail - nothing in I1-I5 reads it back yet.
+ * Append-only audit record of a manual stock adjustment — specs/iter2/3-domain-models-inventory-
+ * service-ddd.md §2.1.1. Fully derivable from {@code StockAdjusted} events; kept as a convenience
+ * entity for direct audit queries rather than replaying the event stream.
  */
 @Entity
-@Table(name = "stock_adjustment_logs")
-@Getter
-@Setter
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "stock_adjustment_log")
 public class StockAdjustmentLog {
 
     @Id
     private String id;
 
-    @Column(nullable = false)
+    @Column(name = "stock_item_id", nullable = false)
     private String stockItemId;
 
-    @Column(nullable = false)
+    @Column(name = "adjusted_by", nullable = false)
     private String adjustedBy;
 
     @Column(nullable = false)
@@ -41,16 +30,44 @@ public class StockAdjustmentLog {
 
     private String reason;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        if (id == null || id.isBlank()) {
-            id = UUID.randomUUID().toString();
-        }
-        if (createdAt == null) {
-            createdAt = LocalDateTime.now();
-        }
+    protected StockAdjustmentLog() {
+        // JPA
+    }
+
+    public StockAdjustmentLog(String id, String stockItemId, String adjustedBy, int delta, String reason,
+                               Instant createdAt) {
+        this.id = id;
+        this.stockItemId = stockItemId;
+        this.adjustedBy = adjustedBy;
+        this.delta = delta;
+        this.reason = reason;
+        this.createdAt = createdAt;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getStockItemId() {
+        return stockItemId;
+    }
+
+    public String getAdjustedBy() {
+        return adjustedBy;
+    }
+
+    public int getDelta() {
+        return delta;
+    }
+
+    public String getReason() {
+        return reason;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 }

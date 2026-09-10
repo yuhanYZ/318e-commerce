@@ -6,33 +6,17 @@ import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
 /**
- * A single product line within an {@link Order}.
- * Maps to the {@code OrderItem} domain class in specs/3-domain-models.md section
- * 4.2 - a composition of Order, not an independently queried aggregate root
- * (accessed only via {@code order.getItems()}).
- * {@code productId} is a cross-service reference only (Product Service owns the
- * catalog); {@code unitPrice} is a price snapshot taken at order time (O1) so
- * later catalog price changes never affect existing orders.
+ * {@code OrderItem} (Entity) — composed inside {@code OrderAggregate}, not an independent
+ * aggregate — specs/iter2/3-domain-models-order-service-ddd.md §2.1.1. {@code unitPrice} is a
+ * snapshot of the Product Service price at placement time, unaffected by later price changes.
  */
 @Entity
-@Table(name = "order_items")
-@Getter
-@Setter
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "order_item")
 public class OrderItem {
 
     @Id
@@ -42,19 +26,55 @@ public class OrderItem {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
-    @Column(nullable = false)
+    @Column(name = "product_id", nullable = false)
     private String productId;
 
     @Column(nullable = false)
     private int quantity;
 
-    @Column(nullable = false, precision = 12, scale = 2)
-    private BigDecimal unitPrice;
+    @Column(name = "unit_price_amount", nullable = false)
+    private BigDecimal unitPriceAmount;
 
-    @PrePersist
-    protected void onCreate() {
-        if (id == null || id.isBlank()) {
-            id = UUID.randomUUID().toString();
-        }
+    @Column(name = "unit_price_currency", nullable = false)
+    private String unitPriceCurrency;
+
+    protected OrderItem() {
+        // JPA
+    }
+
+    public OrderItem(String id, String productId, int quantity, BigDecimal unitPriceAmount, String unitPriceCurrency) {
+        this.id = id;
+        this.productId = productId;
+        this.quantity = quantity;
+        this.unitPriceAmount = unitPriceAmount;
+        this.unitPriceCurrency = unitPriceCurrency;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public Order getOrder() {
+        return order;
+    }
+
+    void setOrder(Order order) {
+        this.order = order;
+    }
+
+    public String getProductId() {
+        return productId;
+    }
+
+    public int getQuantity() {
+        return quantity;
+    }
+
+    public BigDecimal getUnitPriceAmount() {
+        return unitPriceAmount;
+    }
+
+    public String getUnitPriceCurrency() {
+        return unitPriceCurrency;
     }
 }

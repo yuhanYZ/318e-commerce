@@ -1,16 +1,14 @@
 server:
   port: 8082
-  servlet:
-    context-path: /api/v1
 
 spring:
   application:
     name: product-service
   datasource:
-    url: jdbc:h2:mem:productservice;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:productservicedb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
     username: sa
-    password: ""
+    password:
   jpa:
     hibernate:
       ddl-auto: update
@@ -21,16 +19,12 @@ spring:
       enabled: true
       path: /h2-console
 
-# MUST be identical to user-service's app.jwt.secret - both services validate tokens
-# signed with the same key. In a real deployment this would come from a shared
-# secret store / environment variable, not be duplicated in source per service.
 app:
   jwt:
-    secret: "kQbfTYJzlIoUnLQQ7pah1+LRq3mUgOznZW7FQdpUwvbRh2BI1cIpDIAY9k5gn8TK"
-  services:
-    inventory-service:
-      base-url: http://localhost:8084/api/v1
-
-logging:
-  level:
-    com.ecommerce.productservice: INFO
+    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
+    # Shared HS256 secret - MUST be identical across all six services (see
+    # 1-technical-architecture-v2.md Security Model). The default here is a
+    # dev-only placeholder; override via the JWT_SECRET env var for anything
+    # beyond local dev.
+  inventory-service:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8084/api/v1}

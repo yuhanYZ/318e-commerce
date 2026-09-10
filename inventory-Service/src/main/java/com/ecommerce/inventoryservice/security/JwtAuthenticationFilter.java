@@ -1,53 +1,50 @@
 package com.ecommerce.inventoryservice.security;
 
-import io.jsonwebtoken.Claims;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.List;
 
 /**
- * Reads the {@code Authorization: Bearer <token>} header, and when the token is
- * a valid JWT issued by user-service, populates the SecurityContext with the
- * user id (as principal) and a single ROLE_&lt;role&gt; authority. Requests
- * with no/invalid token proceed unauthenticated; I1 (GET /inventory/{productId})
- * permits this, while I3/I4 reject it via the configured 401/403 handlers.
+ * Reads {@code Authorization: Bearer <jwt>}, validates it against the shared HS256 secret, and
+ * populates the SecurityContext with principal = userId (JWT {@code sub}) and a single authority
+ * ROLE_&lt;role claim&gt;. An invalid/expired/missing token is simply treated as anonymous —
+ * downstream authorization rules (permitAll vs authenticated vs hasRole) decide the resulting
+ * status (401 vs 403), not this filter.
  */
-@Component
-@RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
-    private static final String AUTH_HEADER = "Authorization";
-    private static final String BEARER_PREFIX = "Bearer ";
+    private final JwtService jwtService;
 
-    private final JwtTokenProvider jwtTokenProvider;
+    public JwtAuthenticationFilter(JwtService jwtService) {
+        this.jwtService = jwtService;
+    }
 
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        String header = request.getHeader(AUTH_HEADER);
-
-        if (header != null && header.startsWith(BEARER_PREFIX)) {
-            String token = header.substring(BEARER_PREFIX.length());
-            if (jwtTokenProvider.validateToken(token)) {
-                Claims claims = jwtTokenProvider.parseClaims(token);
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            try {
+                String token = header.substring("Bearer ".length());
+                var claims = jwtService.parse(token).getPayload();
                 String userId = claims.getSubject();
                 String role = claims.get("role", String.class);
-                var authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
+                List<GrantedAuthority> authorities = List.of(new SimpleGrantedAuthority("ROLE_" + role));
                 var authentication = new UsernamePasswordAuthenticationToken(userId, null, authorities);
                 SecurityContextHolder.getContext().setAuthentication(authentication);
+            } catch (Exception ex) {
+                SecurityContextHolder.clearContext();
             }
         }
-
         filterChain.doFilter(request, response);
     }
 }

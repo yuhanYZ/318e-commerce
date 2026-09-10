@@ -1,16 +1,14 @@
 server:
   port: 8083
-  servlet:
-    context-path: /api/v1
 
 spring:
   application:
     name: order-service
   datasource:
-    url: jdbc:h2:mem:orderservice;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:orderservicedb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
     username: sa
-    password: ""
+    password:
   jpa:
     hibernate:
       ddl-auto: update
@@ -21,40 +19,52 @@ spring:
       enabled: true
       path: /h2-console
   kafka:
-    bootstrap-servers: localhost:9092
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      properties:
-        max.block.ms: 2000 # fail fast instead of blocking ~60s when no broker is running yet (see OrderEventPublisher)
-        # Alias -> class name, instead of letting JsonSerializer default to the raw fully-qualified
-        # class name in the __TypeId__ header - other services (e.g. inventory-Service) deserialize
-        # the same alias into their OWN local copy of the event class (separate Maven modules, no
-        # shared dependency), so both sides only need to agree on the alias string, not the package.
-        spring.json.type.mapping: "order-created:com.ecommerce.orderservice.event.OrderCreatedEvent,order-cancelled:com.ecommerce.orderservice.event.OrderCancelledEvent"
-    consumer:
-      group-id: order-service
-      auto-offset-reset: earliest
-      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
-      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
-      properties:
-        spring.json.trusted.packages: "com.ecommerce.orderservice.event"
-        spring.json.type.mapping: "payment-confirmed:com.ecommerce.orderservice.event.PaymentConfirmedEvent,payment-failed:com.ecommerce.orderservice.event.PaymentFailedEvent"
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  cloud:
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+      # spring.cloud.function.definition / spring.cloud.stream.bindings live in the "kafka"-profile
+      # document below (6-cqrs-command-query.md §8) so mvn test never activates real bindings.
 
-# MUST be identical to user-service's app.jwt.secret - all services validate tokens
-# signed with the same key. In a real deployment this would come from a shared
-# secret store / environment variable, not be duplicated in source per service.
 app:
   jwt:
-    secret: "kQbfTYJzlIoUnLQQ7pah1+LRq3mUgOznZW7FQdpUwvbRh2BI1cIpDIAY9k5gn8TK"
-  services:
-    inventory-service:
-      base-url: http://localhost:8084/api/v1
-    product-service:
-      base-url: http://localhost:8082/api/v1
+    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
+    # Shared HS256 secret - MUST be identical across all six services (see
+    # 1-technical-architecture-v2.md Security Model). The default here is a
+    # dev-only placeholder; override via the JWT_SECRET env var for anything
+    # beyond local dev.
+  product-service:
+    base-url: ${PRODUCT_SERVICE_URL:http://localhost:8082/api/v1}
+  inventory-service:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8084/api/v1}
+  kafka:
+    enabled: false
+    # Default OFF. app.kafka.enabled and the spring.cloud.function.definition/bindings below only
+    # take effect under the "kafka" profile (the document below, gated by
+    # spring.config.activate.on-profile) - so `mvn test` (no active profile) never sees any of
+    # this and OrderCommandService's Kafka publish calls are guaranteed no-ops. Activate with
+    # --spring.profiles.active=kafka (or SPRING_PROFILES_ACTIVE=kafka) against a real broker - see
+    # the repo's docker-compose.yml.
 
-logging:
-  level:
-    com.ecommerce.orderservice: INFO
-    org.apache.kafka: ERROR       # silence background broker-connection retry noise; no broker exists yet
-    org.springframework.kafka: WARN
+---
+spring:
+  config:
+    activate:
+      on-profile: kafka
+  cloud:
+    function:
+      definition: updateOrderOnPaymentConfirmed;updateOrderOnPaymentFailed
+    stream:
+      bindings:
+        updateOrderOnPaymentConfirmed-in-0:
+          destination: payment.confirmed
+          group: order-service
+        updateOrderOnPaymentFailed-in-0:
+          destination: payment.failed
+          group: order-service
+
+app:
+  kafka:
+    enabled: true

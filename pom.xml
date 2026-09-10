@@ -18,11 +18,10 @@
         <module>order-service</module>
         <module>inventory-Service</module>
         <module>payment-service</module>
+        <module>ai-customer-service</module>
         <!--
-          Additional service modules are added here as each one is scaffolded:
-          ai-customer-service
-          (inventory-Service keeps its existing capital "S" to match the
-          already-committed directory name - see `git ls-files | grep -i inventory`)
+          inventory-Service keeps its existing capital "S" to match the
+          already-committed directory name on disk / in git history.
         -->
     </modules>
 
@@ -32,8 +31,19 @@
         <maven.compiler.target>21</maven.compiler.target>
         <maven.compiler.parameters>true</maven.compiler.parameters>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
         <spring-boot.version>3.3.5</spring-boot.version>
+        <spring-cloud.version>2023.0.4</spring-cloud.version>
         <jjwt.version>0.12.6</jjwt.version>
+        <!-- NOT independently verified against Maven Central from this cloud sandbox
+             (egress to repo.maven.apache.org is blocked here). Confirm these three
+             versions resolve when you run `mvn test-compile` locally; if one 404s,
+             bump to the nearest available patch/minor on the same train:
+               - spring-boot.version: 3.3.x line
+               - spring-cloud.version: must be a 2023.0.x release compatible with
+                 Spring Boot 3.3.x (see spring.io/projects/spring-cloud#overview)
+               - langchain4j.version: dev.langchain4j current release -->
+        <langchain4j.version>0.36.0</langchain4j.version>
     </properties>
 
     <dependencyManagement>
@@ -42,6 +52,20 @@
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-dependencies</artifactId>
                 <version>${spring-boot.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>dev.langchain4j</groupId>
+                <artifactId>langchain4j-bom</artifactId>
+                <version>${langchain4j.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -62,6 +86,11 @@
                     <configuration>
                         <parameters>true</parameters>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <version>${spring-boot.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>

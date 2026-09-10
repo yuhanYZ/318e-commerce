@@ -12,6 +12,7 @@
         <module name="order-service" />
         <module name="inventory-service" />
         <module name="payment-service" />
+        <module name="ai-customer-service" />
       </profile>
     </annotationProcessing>
   </component>
@@ -19,6 +20,7 @@
     <option name="ADDITIONAL_OPTIONS_STRING" value="   -parameters" />
     <option name="ADDITIONAL_OPTIONS_OVERRIDE">
       <module name="318e-e-commerce" options="-parameters" />
+      <module name="ai-customer-service" options="-parameters -parameters" />
       <module name="inventory-service" options="-parameters -parameters" />
       <module name="order-service" options="-parameters -parameters" />
       <module name="payment-service" options="-parameters -parameters" />

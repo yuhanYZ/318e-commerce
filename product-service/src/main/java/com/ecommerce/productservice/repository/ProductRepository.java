@@ -16,12 +16,8 @@ public interface ProductRepository extends JpaRepository<Product, String> {
 
     Page<Product> findByStatusAndCategoryId(ProductStatus status, String categoryId, Pageable pageable);
 
-    /**
-     * P3: case-insensitive match against name or description, restricted to active products.
-     * Results are not scored/ranked beyond DB row order - see ProductService for the simplification note.
-     */
-    @Query("SELECT p FROM Product p WHERE p.status = :status AND ("
-            + "LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) "
+    @Query("SELECT p FROM Product p WHERE p.status = :status AND "
+            + "(LOWER(p.name) LIKE LOWER(CONCAT('%', :keyword, '%')) "
             + "OR LOWER(p.description) LIKE LOWER(CONCAT('%', :keyword, '%')))")
-    List<Product> searchActiveProducts(@Param("status") ProductStatus status, @Param("keyword") String keyword);
+    List<Product> search(@Param("status") ProductStatus status, @Param("keyword") String keyword);
 }

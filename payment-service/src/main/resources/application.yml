@@ -1,16 +1,14 @@
 server:
   port: 8085
-  servlet:
-    context-path: /api/v1
 
 spring:
   application:
     name: payment-service
   datasource:
-    url: jdbc:h2:mem:paymentservice;DB_CLOSE_DELAY=-1
+    url: jdbc:h2:mem:paymentservicedb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
     username: sa
-    password: ""
+    password:
   jpa:
     hibernate:
       ddl-auto: update
@@ -21,37 +19,40 @@ spring:
       enabled: true
       path: /h2-console
   kafka:
-    bootstrap-servers: localhost:9092
-    producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
-      properties:
-        max.block.ms: 2000 # fail fast instead of blocking ~60s when no broker is running yet (see PaymentEventPublisher)
-        # Alias -> class name, mirroring order-service/inventory-service's application.yml.
-        spring.json.type.mapping: "payment-confirmed:com.ecommerce.paymentservice.event.PaymentConfirmedEvent,payment-failed:com.ecommerce.paymentservice.event.PaymentFailedEvent,refund-processed:com.ecommerce.paymentservice.event.RefundProcessedEvent"
-    # No consumer block: unlike order-service/inventory-service, this service has no @KafkaListener -
-    # PAY1-PAY4 are all synchronous, user-initiated REST calls (see specs/2-user-stories.md), it only
-    # ever publishes events, never consumes them.
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  cloud:
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+      # Payment Service is a pure Kafka PRODUCER (payment.confirmed/payment.failed/payment.refunded)
+      # for this iteration - no spring.cloud.function.definition/bindings needed here, since there
+      # are no consumer beans. Publishing goes through StreamBridge (PaymentCommandService), gated
+      # by app.kafka.enabled below - see order-service/application.yml's identical comment for the
+      # full rationale.
 
-# MUST be identical to user-service's app.jwt.secret - all services validate tokens
-# signed with the same key. In a real deployment this would come from a shared
-# secret store / environment variable, not be duplicated in source per service.
 app:
   jwt:
-    secret: "kQbfTYJzlIoUnLQQ7pah1+LRq3mUgOznZW7FQdpUwvbRh2BI1cIpDIAY9k5gn8TK"
-  services:
-    order-service:
-      base-url: http://localhost:8083/api/v1
+    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
+    # Shared HS256 secret - MUST be identical across all six services (see
+    # 1-technical-architecture-v2.md Security Model). The default here is a
+    # dev-only placeholder; override via the JWT_SECRET env var for anything
+    # beyond local dev.
+  order-service:
+    base-url: ${ORDER_SERVICE_URL:http://localhost:8083/api/v1}
   payment:
-    # There is no real/sandbox payment gateway to integrate with (explicitly confirmed
-    # out of scope for this project) - MockPaymentGateway simulates one deterministically,
-    # the way real sandbox gateways use reserved test values (e.g. Stripe/PayPal test
-    # cards) to trigger a specific outcome: submitting this exact string as the
-    # PaymentRequest.method simulates a declined payment; any other value succeeds.
-    mock-decline-trigger: "MOCK_CARD_DECLINE"
+    mock-failure-fraction: "99"   # amount fraction that deterministically fails, see 3-domain-models-payment-service-ddd.md §2.3.1
+  kafka:
+    enabled: false
+    # Default OFF - no contract test activates the "kafka" profile, so publishPaymentOutcome/
+    # publishRefundProcessed (PaymentCommandService) are guaranteed no-ops during mvn test.
 
-logging:
-  level:
-    com.ecommerce.paymentservice: INFO
-    org.apache.kafka: ERROR       # silence background broker-connection retry noise; no broker exists yet
-    org.springframework.kafka: WARN
+---
+spring:
+  config:
+    activate:
+      on-profile: kafka
+
+app:
+  kafka:
+    enabled: true

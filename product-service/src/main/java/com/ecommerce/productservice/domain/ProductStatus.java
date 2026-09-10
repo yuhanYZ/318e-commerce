@@ -1,10 +1,6 @@
 package com.ecommerce.productservice.domain;
 
-/**
- * Lifecycle status of a {@link Product}.
- * {@code INACTIVE} is set by an Admin deactivating a product (P4); deactivated
- * products no longer appear in P1 (browse) or P3 (search) results.
- */
+/** specs/iter2/3-domain-models-product-service-ddd.md §2.2.4. INACTIVE is a terminal state. */
 public enum ProductStatus {
     ACTIVE,
     INACTIVE

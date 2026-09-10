@@ -5,62 +5,98 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
-import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
-import lombok.Getter;
-import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
-import java.util.UUID;
+import java.time.Instant;
 
 /**
- * A single payment transaction for an order (PAY1, PAY2, PAY4).
- * Maps to the {@code Payment} domain class in specs/3-domain-models.md
- * section 6.1. {@code orderId} is a cross-service reference only (Order
- * Service owns the order); this service never writes back to Order Service
- * directly - it publishes PaymentConfirmedEvent/PaymentFailedEvent instead,
- * which Order Service's O5 consumer reacts to, per the Database-per-Service
- * pattern already used by order-service/inventory-service.
+ * {@code PaymentAggregate} (root: Payment) — specs/iter2/3-domain-models-payment-service-ddd.md
+ * §2.3.1. {@code method} is always "MOCK" (no real gateway integration this iteration).
  */
 @Entity
-@Table(name = "payments")
-@Getter
-@Setter
-@Builder
-@NoArgsConstructor
-@AllArgsConstructor
+@Table(name = "payment")
 public class Payment {
 
     @Id
     private String id;
 
-    @Column(nullable = false)
+    @Column(name = "order_id", nullable = false)
     private String orderId;
 
-    @Column(nullable = false, precision = 12, scale = 2)
+    @Column(nullable = false)
     private BigDecimal amount;
 
+    @Column(nullable = false)
+    private String currency;
+
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
+    @Column(nullable = false)
     private PaymentStatus status;
 
     @Column(nullable = false)
     private String method;
 
-    @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt;
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
 
-    @PrePersist
-    protected void onCreate() {
-        if (id == null || id.isBlank()) {
-            id = UUID.randomUUID().toString();
-        }
-        if (createdAt == null) {
-            createdAt = LocalDateTime.now();
-        }
+    protected Payment() {
+        // JPA
+    }
+
+    public Payment(String id) {
+        this.id = id;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public String getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(String orderId) {
+        this.orderId = orderId;
+    }
+
+    public BigDecimal getAmount() {
+        return amount;
+    }
+
+    public void setAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
+    public String getCurrency() {
+        return currency;
+    }
+
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+
+    public PaymentStatus getStatus() {
+        return status;
+    }
+
+    public void setStatus(PaymentStatus status) {
+        this.status = status;
+    }
+
+    public String getMethod() {
+        return method;
+    }
+
+    public void setMethod(String method) {
+        this.method = method;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
     }
 }
