@@ -12,7 +12,10 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 /**
- * The real AI1/AI2 flow: GPT-4o-mini via LangChain4j, grounded with {@link ProductLookupTool}.
+ * The real AI1/AI2 flow: an OpenAI-compatible chat model via LangChain4j, grounded with
+ * {@link ProductLookupTool}. Defaults to real OpenAI (GPT-4o-mini) but {@code app.openai.base-url}
+ * can point this at any OpenAI-compatible provider (e.g. DeepSeek's {@code
+ * https://api.deepseek.com}) instead — see application.yml's comment for the env vars to override.
  *
  * {@code @Profile("!test")} keeps this bean out of the Spring context entirely under the
  * "test" profile that AiCustomerServiceContractTests activates (`@ActiveProfiles("test")`) — so
@@ -25,9 +28,11 @@ public class ChatAgentConfig {
     @Bean
     @Profile("!test")
     public ChatAgent chatAgent(@Value("${app.openai.api-key}") String apiKey,
+                                @Value("${app.openai.base-url}") String baseUrl,
                                 @Value("${app.openai.model-name}") String modelName,
                                 ProductLookupTool productLookupTool) {
         ChatLanguageModel model = OpenAiChatModel.builder()
+                .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .modelName(modelName)
                 .build();

@@ -31,5 +31,12 @@ app:
   order-service:
     base-url: ${ORDER_SERVICE_URL:http://localhost:8083/api/v1}
   openai:
-    api-key: ${OPENAI_API_KEY:}
-    model-name: ${OPENAI_MODEL:gpt-4o-mini}
+    api-key: ${OPENAI_API_KEY:sk-43afc28ee79c4ae8849109dd5d3c7781}
+    # No default on purpose - a real key is a secret and should never be committed to git.
+    # Set it as an environment variable (OPENAI_API_KEY) wherever this service actually runs
+    # (IntelliJ Run Configuration -> Environment variables, or the shell before launching it).
+    base-url: ${OPENAI_BASE_URL:https://api.deepseek.com}
+    model-name: ${OPENAI_MODEL:deepseek-flash}
+    # Defaulted to DeepSeek's OpenAI-compatible endpoint/model since that's what this project
+    # actually uses. To point at real OpenAI instead, override via env vars:
+    # OPENAI_BASE_URL=https://api.openai.com/v1, OPENAI_MODEL=gpt-4o-mini (or another OpenAI model).

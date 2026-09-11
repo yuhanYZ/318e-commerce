@@ -25,8 +25,11 @@ spring:
       kafka:
         binder:
           brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-      # function/bindings definitions are added in Phase 4 once the
-      # producer/consumer beans exist (6-cqrs-command-query.md §8)
+      # Payment Service is a pure Kafka PRODUCER (payment.confirmed/payment.failed/payment.refunded)
+      # for this iteration - no spring.cloud.function.definition/bindings needed here, since there
+      # are no consumer beans. Publishing goes through StreamBridge (PaymentCommandService), gated
+      # by app.kafka.enabled below - see order-service/application.yml's identical comment for the
+      # full rationale.
 
 app:
   jwt:
@@ -39,3 +42,17 @@ app:
     base-url: ${ORDER_SERVICE_URL:http://localhost:8083/api/v1}
   payment:
     mock-failure-fraction: "99"   # amount fraction that deterministically fails, see 3-domain-models-payment-service-ddd.md §2.3.1
+  kafka:
+    enabled: false
+    # Default OFF - no contract test activates the "kafka" profile, so publishPaymentOutcome/
+    # publishRefundProcessed (PaymentCommandService) are guaranteed no-ops during mvn test.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: kafka
+
+app:
+  kafka:
+    enabled: true

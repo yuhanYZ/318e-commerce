@@ -25,8 +25,8 @@ spring:
       kafka:
         binder:
           brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-      # function/bindings definitions are added in Phase 4 once the
-      # producer/consumer beans exist (6-cqrs-command-query.md §8)
+      # spring.cloud.function.definition / spring.cloud.stream.bindings live in the "kafka"-profile
+      # document below (6-cqrs-command-query.md §8) so mvn test never activates real bindings.
 
 app:
   jwt:
@@ -39,3 +39,32 @@ app:
     base-url: ${PRODUCT_SERVICE_URL:http://localhost:8082/api/v1}
   inventory-service:
     base-url: ${INVENTORY_SERVICE_URL:http://localhost:8084/api/v1}
+  kafka:
+    enabled: false
+    # Default OFF. app.kafka.enabled and the spring.cloud.function.definition/bindings below only
+    # take effect under the "kafka" profile (the document below, gated by
+    # spring.config.activate.on-profile) - so `mvn test` (no active profile) never sees any of
+    # this and OrderCommandService's Kafka publish calls are guaranteed no-ops. Activate with
+    # --spring.profiles.active=kafka (or SPRING_PROFILES_ACTIVE=kafka) against a real broker - see
+    # the repo's docker-compose.yml.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: kafka
+  cloud:
+    function:
+      definition: updateOrderOnPaymentConfirmed;updateOrderOnPaymentFailed
+    stream:
+      bindings:
+        updateOrderOnPaymentConfirmed-in-0:
+          destination: payment.confirmed
+          group: order-service
+        updateOrderOnPaymentFailed-in-0:
+          destination: payment.failed
+          group: order-service
+
+app:
+  kafka:
+    enabled: true
