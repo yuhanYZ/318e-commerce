@@ -1,0 +1,22 @@
+# Maven build output
+target/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse / VS Code
+.classpath
+.project
+.settings/
+.vscode/
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Local env overrides (JWT_SECRET, API keys - never commit these)
+.env
+*.local.properties
