@@ -78,6 +78,16 @@
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
+                <!-- The root pom is its own parent, not spring-boot-starter-parent, so the
+                     repackage goal is not bound automatically. Without this, mvn package
+                     produces a thin jar that java -jar cannot run. -->
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>repackage</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
         </plugins>
     </build>
