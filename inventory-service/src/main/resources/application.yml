@@ -1,0 +1,68 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: inventory-service
+  datasource:
+    url: jdbc:h2:mem:inventoryservicedb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  cloud:
+    stream:
+      function:
+        # Off by default so Spring Cloud Stream never tries to bind the stream function beans
+        # to a broker. Without the kafka profile, the low-stock alert function is invoked
+        # in-process and the Kafka consumers do not exist. See the kafka profile below.
+        autodetect: false
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
+    # Shared HS256 secret - MUST be identical across all six services
+    # (1-technical-architecture-v2.md, Security Model).
+  inventory:
+    low-stock-threshold: ${LOW_STOCK_THRESHOLD:5}
+    # Single global threshold read by InventoryPolicyService (domain-models §2.4.1).
+    # An alert opens when stock < threshold and resolves once stock >= threshold.
+
+---
+# Kafka profile: run with --spring.profiles.active=kafka against a real broker.
+#   I2  order.created   -> deductStockOnOrderCreated
+#   I5  order.cancelled -> releaseStockOnOrderCancelled
+#   I5  payment.failed  -> releaseStockOnPaymentFailed
+#   I4  inventory.stock-level-changed -> lowStockAlertJob (internal topic, this service only)
+spring:
+  config:
+    activate:
+      on-profile: kafka
+  cloud:
+    function:
+      definition: deductStockOnOrderCreated;releaseStockOnOrderCancelled;releaseStockOnPaymentFailed;lowStockAlertJob
+    stream:
+      bindings:
+        deductStockOnOrderCreated-in-0:
+          destination: order.created
+          group: inventory-service
+        releaseStockOnOrderCancelled-in-0:
+          destination: order.cancelled
+          group: inventory-service
+        releaseStockOnPaymentFailed-in-0:
+          destination: payment.failed
+          group: inventory-service
+        lowStockAlertJob-in-0:
+          destination: inventory.stock-level-changed
+          group: inventory-service
