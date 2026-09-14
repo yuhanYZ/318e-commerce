@@ -1,0 +1,16 @@
+server:
+  port: 8082
+spring:
+  datasource:
+    url: jdbc:h2:mem:productdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    open-in-view: false
+app:
+  jwt:
+    secret: ${JWT_SECRET:development-only-secret-key-change-me-318e}
+  inventory:
+    base-url: ${INVENTORY_BASE_URL:http://localhost:8084/api/v1}

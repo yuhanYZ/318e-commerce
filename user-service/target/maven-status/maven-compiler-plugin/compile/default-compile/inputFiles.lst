@@ -1,0 +1,15 @@
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\domain\AccountStatus.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\domain\PasswordResetToken.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\domain\Role.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\domain\UserAccount.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\infrastructure\persistence\PasswordResetTokenRepository.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\infrastructure\persistence\UserRepository.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\infrastructure\security\JwtAuthenticationFilter.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\infrastructure\security\JwtService.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\infrastructure\security\SecurityConfig.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\presentation\ApiExceptionHandler.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\presentation\UserController.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\presentation\UserDtos.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\service\ApiException.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\service\UserApplicationService.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\user-service\src\main\java\com\csc318\ecommerce\user\UserServiceApplication.java
