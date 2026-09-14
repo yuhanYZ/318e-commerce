@@ -13,12 +13,8 @@
     <description>CSCI318 Capstone - E-Commerce Microservices Platform (parent aggregator POM)</description>
 
     <modules>
-        <module>user-service</module>
         <module>product-service</module>
-        <module>order-service</module>
         <module>inventory-service</module>
-        <module>payment-service</module>
-        <module>ai-customer-service</module>
     </modules>
 
     <properties>
