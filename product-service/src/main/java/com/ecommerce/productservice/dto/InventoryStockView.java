@@ -3,10 +3,10 @@ package com.ecommerce.productservice.dto;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 /**
- * Minimal view of Inventory Service's StockResponse (GET /inventory/{productId}) — only the two
- * fields P2 needs. {@code ignoreUnknown} because the real response also carries productId/version
- * which Jackson would otherwise reject under Spring Boot's default fail-on-unknown-properties.
+ * Inventory Service's {@code StockResponse}, as consumed by P2 over REST.
+ * Only the two fields P2 needs are bound; anything else Inventory adds is ignored so a
+ * contract addition on their side cannot break product details.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
-public record InventoryStockView(int quantityAvailable, boolean isAvailable) {
+public record InventoryStockView(String productId, Integer quantityAvailable, Boolean isAvailable) {
 }

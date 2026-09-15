@@ -1,0 +1,16 @@
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\domain\Category.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\domain\Product.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\domain\ProductStatus.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\inventory\InventoryClient.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\persistence\CategoryRepository.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\persistence\DataSeeder.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\persistence\ProductRepository.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\security\JwtAuthenticationFilter.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\security\JwtService.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\infrastructure\security\SecurityConfig.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\presentation\ApiExceptionHandler.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\presentation\ProductController.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\presentation\ProductDtos.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\ProductServiceApplication.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\service\ApiException.java
+C:\Users\Administrator\Documents\GitHub\318e-commerce\product-service\src\main\java\com\csc318\ecommerce\product\service\ProductApplicationService.java

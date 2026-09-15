@@ -1,10 +1,18 @@
 package com.ecommerce.productservice.dto;
 
 /**
- * specs/iter2/openapi-contract-v2.yaml components/schemas/ProductDetailResponse (allOf
- * ProductResponse + stockAvailable/isInStock). Flattened into one record rather than modelling
- * the allOf as inheritance — simpler for a single response DTO with no reuse need.
+ * OpenAPI {@code ProductDetailResponse} - ProductResponse plus live stock from Inventory
+ * Service (P2). Declared as allOf in the contract; flattened here because Java records
+ * cannot extend another record.
  */
-public record ProductDetailResponse(String id, String name, String description, MoneyDto price, String imageUrl,
-                                     String categoryId, String status, int stockAvailable, boolean isInStock) {
+public record ProductDetailResponse(
+        String id,
+        String name,
+        String description,
+        MoneyDto price,
+        String imageUrl,
+        String categoryId,
+        String status,
+        int stockAvailable,
+        boolean isInStock) {
 }

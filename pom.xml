@@ -1,98 +1,30 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>com.ecommerce</groupId>
-    <artifactId>318e-e-commerce</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <packaging>pom</packaging>
 
-    <name>318e-e-commerce</name>
-    <description>CSCI318 Capstone - E-Commerce Microservices Platform (parent aggregator POM)</description>
 
     <modules>
         <module>user-service</module>
         <module>product-service</module>
-        <module>order-service</module>
-        <module>inventory-Service</module>
-        <module>payment-service</module>
-        <module>ai-customer-service</module>
-        <!--
-          inventory-Service keeps its existing capital "S" to match the
-          already-committed directory name on disk / in git history.
-        -->
+        <module>inventory-service</module>
     </modules>
 
     <properties>
         <java.version>21</java.version>
-        <maven.compiler.source>21</maven.compiler.source>
-        <maven.compiler.target>21</maven.compiler.target>
-        <maven.compiler.parameters>true</maven.compiler.parameters>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-
-        <spring-boot.version>3.3.5</spring-boot.version>
-        <spring-cloud.version>2023.0.4</spring-cloud.version>
-        <jjwt.version>0.12.6</jjwt.version>
-        <!-- NOT independently verified against Maven Central from this cloud sandbox
-             (egress to repo.maven.apache.org is blocked here). Confirm these three
-             versions resolve when you run `mvn test-compile` locally; if one 404s,
-             bump to the nearest available patch/minor on the same train:
-               - spring-boot.version: 3.3.x line
-               - spring-cloud.version: must be a 2023.0.x release compatible with
-                 Spring Boot 3.3.x (see spring.io/projects/spring-cloud#overview)
-               - langchain4j.version: dev.langchain4j current release -->
-        <langchain4j.version>0.36.0</langchain4j.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-dependencies</artifactId>
-                <version>${spring-boot.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>org.springframework.cloud</groupId>
-                <artifactId>spring-cloud-dependencies</artifactId>
-                <version>${spring-cloud.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>dev.langchain4j</groupId>
-                <artifactId>langchain4j-bom</artifactId>
-                <version>${langchain4j.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
             </dependency>
         </dependencies>
     </dependencyManagement>
-
-    <build>
-        <pluginManagement>
-            <plugins>
-                <!-- Explicit -parameters flag: Spring's @RequestParam/@PathVariable resolve
-                     argument names via reflection when no explicit name= is given, which
-                     needs this compiler flag. Normally inherited for free from
-                     spring-boot-starter-parent, but this project uses its own aggregator
-                     parent instead, so it has to be declared here. -->
-                <plugin>
-                    <groupId>org.apache.maven.plugins</groupId>
-                    <artifactId>maven-compiler-plugin</artifactId>
-                    <configuration>
-                        <parameters>true</parameters>
-                    </configuration>
-                </plugin>
-                <plugin>
-                    <groupId>org.springframework.boot</groupId>
-                    <artifactId>spring-boot-maven-plugin</artifactId>
-                    <version>${spring-boot.version}</version>
-                </plugin>
-            </plugins>
-        </pluginManagement>
-    </build>
 </project>

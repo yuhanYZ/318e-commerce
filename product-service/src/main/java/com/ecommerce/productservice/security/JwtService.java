@@ -1,17 +1,22 @@
 package com.ecommerce.productservice.security;
 
 import io.jsonwebtoken.Claims;
-import io.jsonwebtoken.Jws;
+import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
+import org.springframework.stereotype.Service;
 
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
-/** Validates JWTs issued by User Service (HS256, shared secret {@code app.jwt.secret}). */
-@Component
+/**
+ * Local HS256 token validation - 1-technical-architecture-v2.md, Security Model.
+ * User Service issues tokens; every service verifies the signature itself against the shared
+ * {@code app.jwt.secret}, with no callback to User Service.
+ */
+@Service
 public class JwtService {
 
     private final SecretKey key;
@@ -20,7 +25,12 @@ public class JwtService {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
-    public Jws<Claims> parse(String token) {
-        return Jwts.parser().verifyWith(key).build().parseSignedClaims(token);
+    /** Returns the token's claims, or empty when the token is malformed, unsigned, or expired. */
+    public Optional<Claims> parse(String token) {
+        try {
+            return Optional.of(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload());
+        } catch (JwtException | IllegalArgumentException ex) {
+            return Optional.empty();
+        }
     }
 }

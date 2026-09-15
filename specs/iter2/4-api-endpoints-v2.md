@@ -36,7 +36,6 @@
 | **O3** | Query | `GET` | `/orders?page={n}&size={m}` | *None* | `200 OK` (`OrderPageResponse`) | None |
 | **O4** | Command | `POST` | `/orders/{id}/cancel` | *None* | `200 OK` (`OrderResponse`) | None |
 | **O5** | Event Handler | *N/A (Kafka consumer)* | consumes `PaymentConfirmedEvent` / `PaymentFailedEvent` | *N/A* | *N/A* | None |
-| **O6** | Query | `GET` | `/orders/analytics/realtime?windowMinutes={n}` | *None* | `200 OK` (`OrderAnalyticsResponse`) | None (Admin only) |
 
 ---
 

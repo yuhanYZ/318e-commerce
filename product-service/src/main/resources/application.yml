@@ -1,5 +1,6 @@
 server:
   port: 8082
+<<<<<<< HEAD
 
 spring:
   application:
@@ -7,10 +8,16 @@ spring:
   datasource:
     url: jdbc:h2:mem:productservicedb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
+=======
+spring:
+  datasource:
+    url: jdbc:h2:mem:productdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+>>>>>>> codex/user-product-services
     username: sa
     password:
   jpa:
     hibernate:
+<<<<<<< HEAD
       ddl-auto: update
     show-sql: false
     open-in-view: false
@@ -22,9 +29,20 @@ spring:
 app:
   jwt:
     secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
-    # Shared HS256 secret - MUST be identical across all six services (see
-    # 1-technical-architecture-v2.md Security Model). The default here is a
-    # dev-only placeholder; override via the JWT_SECRET env var for anything
-    # beyond local dev.
+    # Shared HS256 secret - MUST be identical across all six services
+    # (1-technical-architecture-v2.md, Security Model). The default is a dev-only
+    # placeholder; override via the JWT_SECRET env var outside local dev.
   inventory-service:
     base-url: ${INVENTORY_SERVICE_URL:http://localhost:8084/api/v1}
+    # P2 calls GET /inventory/{productId} here. Public endpoint, so no token is sent
+    # (4-api-endpoints-v2.md §7a). If it is unreachable or returns 404, P2 degrades to
+    # stockAvailable=0 / isInStock=false rather than failing the whole request.
+=======
+      ddl-auto: create-drop
+    open-in-view: false
+app:
+  jwt:
+    secret: ${JWT_SECRET:development-only-secret-key-change-me-318e}
+  inventory:
+    base-url: ${INVENTORY_BASE_URL:http://localhost:8084/api/v1}
+>>>>>>> codex/user-product-services

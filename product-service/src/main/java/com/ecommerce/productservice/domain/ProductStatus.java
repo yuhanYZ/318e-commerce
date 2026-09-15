@@ -1,6 +1,10 @@
 package com.ecommerce.productservice.domain;
 
-/** specs/iter2/3-domain-models-product-service-ddd.md §2.2.4. INACTIVE is a terminal state. */
+/**
+ * {@code ProductStatus} value object - domain-models §2.2.4.
+ *
+ * <p>{@link #INACTIVE} is terminal: reactivation is out of scope for iteration 2.
+ */
 public enum ProductStatus {
     ACTIVE,
     INACTIVE

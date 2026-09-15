@@ -1,34 +1,15 @@
 server:
   port: 8081
-
 spring:
-  application:
-    name: user-service
   datasource:
-    url: jdbc:h2:mem:userservicedb;DB_CLOSE_DELAY=-1
-    driver-class-name: org.h2.Driver
+    url: jdbc:h2:mem:userdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     username: sa
     password:
   jpa:
     hibernate:
-      ddl-auto: update
-    show-sql: false
+      ddl-auto: create-drop
     open-in-view: false
-  h2:
-    console:
-      enabled: true
-      path: /h2-console
-
 app:
   jwt:
-    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
-    # Shared HS256 secret - MUST be identical across all six services (see
-    # 1-technical-architecture-v2.md Security Model). The default here is a
-    # dev-only placeholder; override via the JWT_SECRET env var for anything
-    # beyond local dev.
-  admin:
-    email: ${ADMIN_EMAIL:admin@318ecommerce.local}
-    password: ${ADMIN_PASSWORD:ChangeMe123!}
-  login:
-    max-failed-attempts: 5
-    lockout-minutes: 10
+    secret: ${JWT_SECRET:development-only-secret-key-change-me-318e}
+    expiration-minutes: 60
