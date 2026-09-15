@@ -3,8 +3,9 @@ package com.ecommerce.productservice.exception;
 import org.springframework.http.HttpStatus;
 
 /**
- * Application-level failure carrying the HTTP status and the {@code code} from the error
- * table in 4-api-endpoints-v2.md §8.
+ * Single exception type carrying an HTTP status + the contract's error `code`
+ * (specs/iter2/4-api-endpoints-v2.md §8). Kept as one class rather than a hierarchy to avoid
+ * a proliferation of near-identical exception classes across six independent modules.
  */
 public class ApiException extends RuntimeException {
 
@@ -15,14 +16,6 @@ public class ApiException extends RuntimeException {
         super(message);
         this.status = status;
         this.code = code;
-    }
-
-    public static ApiException notFound(String message) {
-        return new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", message);
-    }
-
-    public static ApiException validationFailed(String message) {
-        return new ApiException(HttpStatus.BAD_REQUEST, "ValidationFailed", message);
     }
 
     public HttpStatus getStatus() {

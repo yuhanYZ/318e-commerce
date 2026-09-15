@@ -13,6 +13,7 @@
 | Order Service | O3 | View Order History | Customer |
 | Order Service | O4 | Cancel an Order | Customer |
 | Order Service | O5 | Update Order Status on Payment Event | System |
+| Order Service | O6 | View Real-Time Order Volume & Revenue Analytics | Admin |
 
 ---
 
@@ -51,3 +52,11 @@
   i. Payment Service publishes a `PaymentConfirmedEvent` or `PaymentFailedEvent` to Kafka after processing a payment.
   ii. Order Service consumes the event.
   iii. On `PaymentConfirmedEvent`, `OrderAggregate.markPaid()` moves the status `PENDING` → `PAID` (emits `OrderPaid`); on `PaymentFailedEvent`, `markPaymentFailed()` moves it `PENDING` → `PAYMENT_FAILED` (emits `OrderPaymentFailed`). `PAYMENT_FAILED` is terminal — the order cannot be re-paid or cancelled. Stock release for a failed payment is handled by Inventory Service consuming the same `PaymentFailedEvent` directly (I5), not by Order Service.
+
+### User Story O6: View Real-Time Order Volume & Revenue Analytics
+- **As an** Admin, **I want to** see a rolling, real-time view of order volume and revenue over a recent sliding time window, so that I can monitor business performance and spot unusual spikes or drops as they happen.
+- **Scenario (Real-Time Analysis — Stream Processing):**
+  i. Every `OrderPlaced` event (the same domain event that triggers `OrderCreatedEvent` for Inventory Service) is also fed, in the same transaction, to a Spring Cloud Stream processing function inside Order Service that increments a one-minute tumbling bucket (`orderCount`, `totalRevenue`) keyed by the event's occurrence minute.
+  ii. The Admin requests the current analytics snapshot from Order Service, specifying a sliding window size in minutes (e.g., the last 15 minutes).
+  iii. Order Service sums all buckets whose `windowStart` falls within `[now - windowMinutes, now]`, discarding older buckets, and returns the aggregated `orderCount`, `totalRevenue`, and derived `averageOrderValue` for that rolling window.
+  iv. No historical/day-level reporting is provided in this iteration — only the current rolling window (default 15 minutes, configurable via `app.analytics.window-minutes`).
