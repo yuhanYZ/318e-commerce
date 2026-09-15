@@ -25,6 +25,8 @@ Evolution from `specs/3-domain-models.md`:
 | `OrderPaid` | Domain Event | Emitted by `OrderAggregate` on consuming `PaymentConfirmedEvent` (O5) |
 | `OrderPaymentFailed` | Domain Event | Emitted by `OrderAggregate` on consuming `PaymentFailedEvent` (O5) |
 | `OrderCancelled` | Domain Event | Emitted by `OrderAggregate` when a customer cancels an order (O4) |
+| `OrderAnalyticsWindow` | Read Model (Projection) | Rolling one-minute buckets of order count / revenue, derived from `OrderPlaced`; powers O6 |
+| `OrderAnalyticsService` | Domain Service | Pure calculation that sums the buckets falling inside a requested sliding window into `orderCount` / `totalRevenue` / `averageOrderValue` |
 
 ### User Story Mapping
 
@@ -35,6 +37,7 @@ Evolution from `specs/3-domain-models.md`:
 | **O3. View Order History** | `Order` | None |
 | **O4. Cancel an Order** | `Order` | `OrderCancelled` |
 | **O5. Update Order Status on Payment Event** | `Order` | `OrderPaid`, `OrderPaymentFailed` |
+| **O6. View Real-Time Order Volume & Revenue Analytics** | `OrderAnalyticsWindow`, `OrderAnalyticsService` | Reads `OrderPlaced` (no new event emitted) |
 
 ---
 
@@ -132,7 +135,13 @@ Evolution from `specs/3-domain-models.md`:
 
 ### 2.4 Domain Services
 
-*(none — status transitions and total-amount calculation are simple enough to live entirely on the aggregate)*
+#### 2.4.1 `OrderAnalyticsService`
+
+| Method | Parameters | Returns | Description |
+| :--- | :--- | :--- | :--- |
+| `summarize` | `buckets: List<OrderAnalyticsWindow>`, `windowMinutes: int`, `now: LocalDateTime` | `OrderAnalyticsSummary { orderCount, totalRevenue, averageOrderValue }` | Sums the buckets whose `windowStart` falls within `[now - windowMinutes, now]`; buckets outside the range are ignored, not deleted. Pure calculation — no persistence or I/O. |
+
+*(Order placement's status transitions and total-amount calculation remain simple enough to live entirely on the `OrderAggregate` and need no domain service.)*
 
 ---
 
@@ -167,3 +176,23 @@ Evolution from `specs/3-domain-models.md`:
 | :--- | :--- | :--- |
 | `orderId` | `OrderId` | The cancelled order |
 | `occurredAt` | `LocalDateTime` | Event timestamp |
+
+---
+
+### 2.6 Read Models (CQRS Projections)
+
+#### 2.6.1 `OrderAnalyticsWindow`
+
+Not part of the `OrderAggregate` write model — a CQRS read-side projection updated synchronously, in the same transaction as `OrderPlaced`, by the Spring Cloud Stream function backing O6 (see `6-cqrs-command-query.md` §4.2 and §7).
+
+| Field | Type | Description | Constraints |
+| :--- | :--- | :--- | :--- |
+| `windowStart` | `LocalDateTime` | Start of this bucket's minute (event timestamp truncated to the minute) | Primary identifier |
+| `orderCount` | `int` | Number of orders placed within this one-minute bucket | `>= 0` |
+| `totalRevenue` | `Money` | Sum of `totalAmount` for orders placed within this bucket | `>= 0` |
+| `updatedAt` | `LocalDateTime` | Last time this bucket was incremented | Auto-updated |
+
+**Notes**
+- One row per minute; a bucket is created on the first `OrderPlaced` event in that minute and incremented on each subsequent one.
+- `GetRealtimeOrderAnalyticsQuery(windowMinutes)` (O6) reads the buckets covering the requested trailing window and passes them to `OrderAnalyticsService.summarize()` — it never reads or mutates the `OrderAggregate` write model directly.
+- Buckets older than the maximum configurable window (e.g. 24h) may be purged by a periodic housekeeping job; this is a storage-management detail, not a domain rule.

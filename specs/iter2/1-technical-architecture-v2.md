@@ -41,7 +41,7 @@ The project is structured as a multi-module repository:
 - **Messaging**: Apache Kafka (event-driven inter-service communication)
     - Example: Order Service publishes `OrderCreatedEvent` → Inventory Service subscribes and deducts stock
 - **Stream Processing**: Spring Cloud Stream
-    - Used to implement real-time analysis requirements such as real-time inventory alerts and real-time order analytics
+    - Used to implement real-time analysis requirements: real-time inventory low-stock alerts (I4) and real-time order volume/revenue analytics over a sliding window (O6)
 - **Agentic AI**: LangChain4j
     - LLM Provider: GPT-4o-mini
     - Powers the AI-Customer Service automated support system

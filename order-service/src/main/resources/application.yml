@@ -1,0 +1,70 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: order-service
+  datasource:
+    url: jdbc:h2:mem:orderservicedb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+  cloud:
+    stream:
+      kafka:
+        binder:
+          brokers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+      # spring.cloud.function.definition / spring.cloud.stream.bindings live in the "kafka"-profile
+      # document below (6-cqrs-command-query.md §8) so mvn test never activates real bindings.
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
+    # Shared HS256 secret - MUST be identical across all six services (see
+    # 1-technical-architecture-v2.md Security Model). The default here is a
+    # dev-only placeholder; override via the JWT_SECRET env var for anything
+    # beyond local dev.
+  product-service:
+    base-url: ${PRODUCT_SERVICE_URL:http://localhost:8082/api/v1}
+  inventory-service:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8084/api/v1}
+  kafka:
+    enabled: false
+    # Default OFF. app.kafka.enabled and the spring.cloud.function.definition/bindings below only
+    # take effect under the "kafka" profile (the document below, gated by
+    # spring.config.activate.on-profile) - so `mvn test` (no active profile) never sees any of
+    # this and OrderCommandService's Kafka publish calls are guaranteed no-ops. Activate with
+    # --spring.profiles.active=kafka (or SPRING_PROFILES_ACTIVE=kafka) against a real broker - see
+    # the repo's docker-compose.yml.
+
+---
+spring:
+  config:
+    activate:
+      on-profile: kafka
+  cloud:
+    function:
+      definition: updateOrderOnPaymentConfirmed;updateOrderOnPaymentFailed
+    stream:
+      bindings:
+        updateOrderOnPaymentConfirmed-in-0:
+          destination: payment.confirmed
+          group: order-service
+        updateOrderOnPaymentFailed-in-0:
+          destination: payment.failed
+          group: order-service
+
+app:
+  kafka:
+    enabled: true

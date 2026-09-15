@@ -1,16 +1,30 @@
 server:
   port: 8082
+
 spring:
+  application:
+    name: product-service
   datasource:
-    url: jdbc:h2:mem:productdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
+    url: jdbc:h2:mem:productservicedb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
     username: sa
     password:
   jpa:
     hibernate:
-      ddl-auto: create-drop
+      ddl-auto: update
+    show-sql: false
     open-in-view: false
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
 app:
   jwt:
-    secret: ${JWT_SECRET:development-only-secret-key-change-me-318e}
-  inventory:
-    base-url: ${INVENTORY_BASE_URL:http://localhost:8084/api/v1}
+    secret: ${JWT_SECRET:dev-only-please-override-318-capstone-shared-hs256-secret-32bytes-min}
+    # Shared HS256 secret - MUST be identical across all six services (see
+    # 1-technical-architecture-v2.md Security Model). The default here is a
+    # dev-only placeholder; override via the JWT_SECRET env var for anything
+    # beyond local dev.
+  inventory-service:
+    base-url: ${INVENTORY_SERVICE_URL:http://localhost:8084/api/v1}

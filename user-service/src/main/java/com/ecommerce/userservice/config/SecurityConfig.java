@@ -1,0 +1,61 @@
+package com.ecommerce.userservice.config;
+
+import com.ecommerce.userservice.security.JwtAuthenticationFilter;
+import com.ecommerce.userservice.security.JwtService;
+import com.ecommerce.userservice.security.RestAccessDeniedHandler;
+import com.ecommerce.userservice.security.RestAuthenticationEntryPoint;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+
+/**
+ * Public endpoints (no token): U1, U2, U4 — see specs/iter2/4-api-endpoints-v2.md §7a.
+ * Everything else (U3, U5) requires a valid JWT; there are no Admin-only endpoints in
+ * User Service itself.
+ */
+@Configuration
+public class SecurityConfig {
+
+    private final JwtService jwtService;
+    private final RestAuthenticationEntryPoint authenticationEntryPoint;
+    private final RestAccessDeniedHandler accessDeniedHandler;
+
+    public SecurityConfig(JwtService jwtService,
+                           RestAuthenticationEntryPoint authenticationEntryPoint,
+                           RestAccessDeniedHandler accessDeniedHandler) {
+        this.jwtService = jwtService;
+        this.authenticationEntryPoint = authenticationEntryPoint;
+        this.accessDeniedHandler = accessDeniedHandler;
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+        http
+                .csrf(AbstractHttpConfigurer::disable)
+                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .exceptionHandling(eh -> eh
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers(HttpMethod.POST,
+                                "/api/v1/users/register",
+                                "/api/v1/users/login",
+                                "/api/v1/users/password-reset/request",
+                                "/api/v1/users/password-reset/confirm").permitAll()
+                        .anyRequest().authenticated())
+                .addFilterBefore(new JwtAuthenticationFilter(jwtService), UsernamePasswordAuthenticationFilter.class);
+        return http.build();
+    }
+}
