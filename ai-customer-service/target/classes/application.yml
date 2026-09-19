@@ -31,7 +31,7 @@ app:
   order-service:
     base-url: ${ORDER_SERVICE_URL:http://localhost:8083/api/v1}
   openai:
-    api-key: ${OPENAI_API_KEY:sk-43afc28ee79c4ae8849109dd5d3c7781}
+    api-key: ${OPENAI_API_KEY:}
     # No default on purpose - a real key is a secret and should never be committed to git.
     # Set it as an environment variable (OPENAI_API_KEY) wherever this service actually runs
     # (IntelliJ Run Configuration -> Environment variables, or the shell before launching it).

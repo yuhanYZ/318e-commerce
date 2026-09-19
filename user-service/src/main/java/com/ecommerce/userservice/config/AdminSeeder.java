@@ -32,7 +32,7 @@ public class AdminSeeder implements CommandLineRunner {
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
     }
-
+//fix it up
     @Override
     public void run(String... args) {
         if (userRepository.existsByEmail(adminEmail)) {
@@ -47,5 +47,6 @@ public class AdminSeeder implements CommandLineRunner {
         admin.setFailedLoginAttempts(0);
         admin.setCreatedAt(Instant.now());
         userRepository.save(admin);
+
     }
 }
