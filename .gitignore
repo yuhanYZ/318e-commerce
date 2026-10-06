@@ -1,0 +1,9 @@
+# Build outputs
+target/
+
+# IDE settings
+.idea/
+.vscode/
+
+# Frontend
+node_modules/
