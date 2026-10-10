@@ -1,6 +1,7 @@
 package com.ecommerce.inventoryservice.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -28,8 +29,9 @@ public class StockEvent {
     @Column(name = "event_id")
     private String eventId;
 
+    @Convert(converter = ProductId.JpaConverter.class)
     @Column(name = "aggregate_id", nullable = false)
-    private String aggregateId;
+    private ProductId aggregateId;
 
     @Column(name = "aggregate_type", nullable = false)
     private String aggregateType;
@@ -65,7 +67,7 @@ public class StockEvent {
         // JPA
     }
 
-    public StockEvent(String eventId, String aggregateId, String eventType, long aggregateVersion,
+    public StockEvent(String eventId, ProductId aggregateId, String eventType, long aggregateVersion,
                        Instant occurredAt, Integer delta, Integer quantity, String orderId, String reason,
                        String adjustedBy, String payload) {
         this.eventId = eventId;
@@ -86,7 +88,7 @@ public class StockEvent {
         return eventId;
     }
 
-    public String getAggregateId() {
+    public ProductId getAggregateId() {
         return aggregateId;
     }
 

@@ -1,6 +1,7 @@
 package com.ecommerce.inventoryservice.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -19,8 +20,9 @@ public class StockAdjustmentLog {
     @Id
     private String id;
 
+    @Convert(converter = StockItemId.JpaConverter.class)
     @Column(name = "stock_item_id", nullable = false)
-    private String stockItemId;
+    private StockItemId stockItemId;
 
     @Column(name = "adjusted_by", nullable = false)
     private String adjustedBy;
@@ -37,7 +39,7 @@ public class StockAdjustmentLog {
         // JPA
     }
 
-    public StockAdjustmentLog(String id, String stockItemId, String adjustedBy, int delta, String reason,
+    public StockAdjustmentLog(String id, StockItemId stockItemId, String adjustedBy, int delta, String reason,
                                Instant createdAt) {
         this.id = id;
         this.stockItemId = stockItemId;
@@ -51,7 +53,7 @@ public class StockAdjustmentLog {
         return id;
     }
 
-    public String getStockItemId() {
+    public StockItemId getStockItemId() {
         return stockItemId;
     }
 

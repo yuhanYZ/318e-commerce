@@ -1,16 +1,17 @@
 package com.ecommerce.inventoryservice.repository;
 
 import com.ecommerce.inventoryservice.domain.StockEvent;
+import com.ecommerce.inventoryservice.domain.ProductId;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
 
 public interface StockEventRepository extends JpaRepository<StockEvent, String> {
 
-    List<StockEvent> findByAggregateIdOrderByAggregateVersionAsc(String aggregateId);
+    List<StockEvent> findByAggregateIdOrderByAggregateVersionAsc(ProductId aggregateId);
 
     /** I2/I5 idempotency guard: has this (productId, orderId) pair already produced this event type? */
-    boolean existsByAggregateIdAndOrderIdAndEventType(String aggregateId, String orderId, String eventType);
+    boolean existsByAggregateIdAndOrderIdAndEventType(ProductId aggregateId, String orderId, String eventType);
 
     /**
      * I5 (PaymentFailedEvent branch): PaymentFailedEvent carries only an orderId, no item list, so

@@ -1,6 +1,7 @@
 package com.ecommerce.inventoryservice.domain;
 
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
@@ -22,8 +23,9 @@ public class LowStockAlert {
     @Id
     private String id;
 
+    @Convert(converter = StockItemId.JpaConverter.class)
     @Column(name = "stock_item_id", nullable = false)
-    private String stockItemId;
+    private StockItemId stockItemId;
 
     @Column(name = "triggered_at", nullable = false)
     private Instant triggeredAt;
@@ -39,7 +41,7 @@ public class LowStockAlert {
     }
 
     /** Opens an alert. Emits {@code LowStockAlertTriggered} (spec section 2.3.2). */
-    public LowStockAlert(String id, String stockItemId, Instant triggeredAt) {
+    public LowStockAlert(String id, StockItemId stockItemId, Instant triggeredAt) {
         this.id = id;
         this.stockItemId = stockItemId;
         this.triggeredAt = triggeredAt;
@@ -51,7 +53,7 @@ public class LowStockAlert {
         return id;
     }
 
-    public String getStockItemId() {
+    public StockItemId getStockItemId() {
         return stockItemId;
     }
 

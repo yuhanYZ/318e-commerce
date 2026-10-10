@@ -1,6 +1,7 @@
 package com.ecommerce.inventoryservice.analytics;
 
 import com.ecommerce.inventoryservice.domain.LowStockAlert;
+import com.ecommerce.inventoryservice.domain.StockItemId;
 import com.ecommerce.inventoryservice.repository.LowStockAlertRepository;
 import com.ecommerce.inventoryservice.service.DomainEventPublisher;
 import org.springframework.stereotype.Component;
@@ -32,11 +33,12 @@ public class LowStockAlertSinkWriter implements LowStockAlertSink {
     @Transactional
     public void apply(StockAlertState state) {
         Instant occurredAt = Instant.ofEpochMilli(state.occurredAtEpochMilli());
+        StockItemId stockItemId = new StockItemId(state.productId());
         Optional<LowStockAlert> openAlert =
-                lowStockAlertRepository.findByStockItemIdAndResolvedAtIsNull(state.productId());
+                lowStockAlertRepository.findByStockItemIdAndResolvedAtIsNull(stockItemId);
 
         if (state.belowThreshold() && openAlert.isEmpty()) {
-            LowStockAlert alert = new LowStockAlert(UUID.randomUUID().toString(), state.productId(), occurredAt);
+            LowStockAlert alert = new LowStockAlert(UUID.randomUUID().toString(), stockItemId, occurredAt);
             lowStockAlertRepository.save(alert);
             domainEventPublisher.publish(alert.pullDomainEvents());
         } else if (!state.belowThreshold() && openAlert.isPresent()) {

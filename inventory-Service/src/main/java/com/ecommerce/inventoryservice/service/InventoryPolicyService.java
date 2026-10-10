@@ -1,5 +1,6 @@
 package com.ecommerce.inventoryservice.service;
 
+import com.ecommerce.inventoryservice.domain.Quantity;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -17,7 +18,7 @@ public class InventoryPolicyService {
         this.lowStockThreshold = lowStockThreshold;
     }
 
-    public boolean isBelowThreshold(int quantityAvailable) {
-        return quantityAvailable < lowStockThreshold;
+    public boolean isBelowThreshold(Quantity quantityAvailable) {
+        return quantityAvailable.isBelow(lowStockThreshold);
     }
 }

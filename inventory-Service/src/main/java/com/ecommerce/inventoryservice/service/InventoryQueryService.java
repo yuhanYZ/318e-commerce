@@ -1,6 +1,7 @@
 package com.ecommerce.inventoryservice.service;
 
 import com.ecommerce.inventoryservice.domain.InventoryReadModel;
+import com.ecommerce.inventoryservice.domain.ProductId;
 import com.ecommerce.inventoryservice.dto.LowStockAlertResponse;
 import com.ecommerce.inventoryservice.dto.StockResponse;
 import com.ecommerce.inventoryservice.exception.ApiException;
@@ -13,8 +14,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 
 /**
- * Query Application Service for Inventory Service — specs/iter2/6-cqrs-command-query.md §3.
- * Covers I1 (check stock) and I4 (list low-stock alerts). Both read from CRUD/projection stores,
+ * Query Application Service for Inventory Service — specs/iter2/6-cqrs-command-query.md §3.2.
+ * Covers I1 (check stock) and I4 (list low-stock alerts). Both read from projection/CRUD stores,
  * never from the event stream directly (see 5-event-sourcing.md §3.5).
  */
 @Service
@@ -32,17 +33,26 @@ public class InventoryQueryService {
 
     /** I1 — an untracked productId (no stream yet) is a 404, not a zero-quantity 200. */
     public StockResponse getStock(String productId) {
-        InventoryReadModel model = readModelRepository.findById(productId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound",
-                        "No stock record for this product"));
-        return new StockResponse(model.getProductId(), model.getQuantityAvailable(),
+        ProductId id;
+        try {
+            id = new ProductId(productId);
+        } catch (IllegalArgumentException ex) {
+            throw notFound();
+        }
+        InventoryReadModel model = readModelRepository.findById(id).orElseThrow(InventoryQueryService::notFound);
+        return new StockResponse(model.getProductId().value(), model.getQuantityAvailable(),
                 model.getQuantityAvailable() > 0, model.getVersion());
     }
 
     /** I4 — active (unresolved) alerts only. */
     public List<LowStockAlertResponse> listLowStockAlerts() {
         return lowStockAlertRepository.findByResolvedAtIsNull().stream()
-                .map(a -> new LowStockAlertResponse(a.getId(), a.getStockItemId(), a.getTriggeredAt(), a.getResolvedAt()))
+                .map(a -> new LowStockAlertResponse(a.getId(), a.getStockItemId().value(), a.getTriggeredAt(),
+                        a.getResolvedAt()))
                 .toList();
+    }
+
+    private static ApiException notFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "No stock record for this product");
     }
 }

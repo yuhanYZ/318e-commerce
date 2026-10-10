@@ -14,24 +14,29 @@ import java.util.UUID;
  *
  * <p>Invariant 3 (specs/iter2/3-domain-models-inventory-service-ddd.md §2.3.1): there is no
  * explicit "initialize" event — a stream comes into existence with its first {@code StockAdjusted}
- * event, starting from quantityAvailable = 0. A stream with zero events is "untracked": {@link
- * #exists()} returns false, and {@code deduct}/{@code release} against it are rejected (invariant
- * 2 — a deduction/release cannot be validated without a starting quantity).
+ * event, starting from quantityAvailable = 0. A stream with zero events is "untracked":
+ * {@link #exists()} returns false, and {@code deduct}/{@code release} against it are rejected
+ * (invariant 2 — a deduction cannot be validated without a starting quantity).
+ *
+ * <p>Its {@code id} is a {@link StockItemId} taking the same value as the tracked
+ * {@link ProductId} (one product, one stream), so the two are interchangeable for stream lookup.
  */
 public final class StockItemAggregate {
 
-    private final String productId;
-    private int quantityAvailable;
+    private final StockItemId id;
+    private final ProductId productId;
+    private Quantity quantityAvailable;
     private long version;
 
-    private StockItemAggregate(String productId) {
+    private StockItemAggregate(ProductId productId) {
         this.productId = productId;
-        this.quantityAvailable = 0;
+        this.id = productId.asStockItemId();
+        this.quantityAvailable = new Quantity(0);
         this.version = 0;
     }
 
     /** Rehydrates the aggregate by replaying its stream in order. Empty list = untracked product. */
-    public static StockItemAggregate rehydrate(String productId, List<StockEvent> orderedEvents) {
+    public static StockItemAggregate rehydrate(ProductId productId, List<StockEvent> orderedEvents) {
         StockItemAggregate aggregate = new StockItemAggregate(productId);
         for (StockEvent event : orderedEvents) {
             aggregate.apply(event);
@@ -41,9 +46,9 @@ public final class StockItemAggregate {
 
     private void apply(StockEvent event) {
         switch (event.getEventType()) {
-            case "StockAdjusted" -> quantityAvailable += event.getDelta();
-            case "StockDeducted" -> quantityAvailable -= event.getQuantity();
-            case "StockReleased" -> quantityAvailable += event.getQuantity();
+            case "StockAdjusted" -> quantityAvailable = quantityAvailable.plus(valueOrZero(event.getDelta()));
+            case "StockDeducted" -> quantityAvailable = quantityAvailable.minus(valueOrZero(event.getQuantity()));
+            case "StockReleased" -> quantityAvailable = quantityAvailable.plus(valueOrZero(event.getQuantity()));
             default -> throw new IllegalStateException("Unknown stock event type: " + event.getEventType());
         }
         version = event.getAggregateVersion();
@@ -54,11 +59,15 @@ public final class StockItemAggregate {
         return version > 0;
     }
 
-    public String getProductId() {
+    public StockItemId getId() {
+        return id;
+    }
+
+    public ProductId getProductId() {
         return productId;
     }
 
-    public int getQuantityAvailable() {
+    public Quantity getQuantityAvailable() {
         return quantityAvailable;
     }
 
@@ -68,8 +77,7 @@ public final class StockItemAggregate {
 
     /** I3 — manual restock/correction. Starts the stream from 0 if previously untracked. */
     public StockEvent adjust(int delta, String reason, String adjustedBy) {
-        int newQuantity = quantityAvailable + delta;
-        if (newQuantity < 0) {
+        if (quantityAvailable.value() + delta < 0) {
             throw stockInvariantViolation();
         }
         StockEvent event = new StockEvent(UUID.randomUUID().toString(), productId, "StockAdjusted",
@@ -80,24 +88,28 @@ public final class StockItemAggregate {
     }
 
     /** I2 — deduct on order creation. Rejected if untracked or would go negative. */
-    public StockEvent deduct(int quantity, String orderId) {
-        if (!exists() || quantityAvailable - quantity < 0) {
+    public StockEvent deduct(Quantity quantity, String orderId) {
+        if (!exists() || quantityAvailable.value() - quantity.value() < 0) {
             throw stockInvariantViolation();
         }
         StockEvent event = new StockEvent(UUID.randomUUID().toString(), productId, "StockDeducted",
-                version + 1, Instant.now(), null, quantity, orderId, null, null,
-                payloadJson("quantity", quantity, "orderId", orderId));
+                version + 1, Instant.now(), null, quantity.value(), orderId, null, null,
+                payloadJson("quantity", quantity.value(), "orderId", orderId));
         apply(event);
         return event;
     }
 
     /** I5 — release on order cancellation / payment failure. */
-    public StockEvent release(int quantity, String orderId) {
+    public StockEvent release(Quantity quantity, String orderId) {
         StockEvent event = new StockEvent(UUID.randomUUID().toString(), productId, "StockReleased",
-                version + 1, Instant.now(), null, quantity, orderId, null, null,
-                payloadJson("quantity", quantity, "orderId", orderId));
+                version + 1, Instant.now(), null, quantity.value(), orderId, null, null,
+                payloadJson("quantity", quantity.value(), "orderId", orderId));
         apply(event);
         return event;
+    }
+
+    private static int valueOrZero(Integer value) {
+        return value == null ? 0 : value;
     }
 
     private static ApiException stockInvariantViolation() {
