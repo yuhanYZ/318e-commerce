@@ -87,12 +87,15 @@
             <artifactId>spring-cloud-stream-binder-kafka</artifactId>
         </dependency>
         <!-- O6 — the real-time order analytics projection is a Kafka Streams windowed aggregation
-             (specs/iter2/3-domain-models-order-service-ddd.md §2.6.1). This is Spring Cloud Stream's
-             own Kafka Streams binder, i.e. the mandated Spring Cloud Stream dependency rather than a
-             third-party streaming engine. Active only under the "kafka" profile. -->
+             (specs/iter2/3-domain-models-order-service-ddd.md §2.6.1). The Kafka Streams library is
+             used directly rather than through Spring Cloud Stream's Kafka Streams *binder*: that
+             binder cannot coexist with the Kafka binder in one application (both declare a
+             KafkaBinderConfigurationProperties bean, which the streams binder's JAAS configuration
+             then cannot disambiguate), and this service needs the Kafka binder for its O5 command
+             consumers. Active only under the "kafka" profile. -->
         <dependency>
-            <groupId>org.springframework.cloud</groupId>
-            <artifactId>spring-cloud-stream-binder-kafka-streams</artifactId>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams</artifactId>
         </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>

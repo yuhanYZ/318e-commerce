@@ -78,7 +78,7 @@ class OrderAnalyticsTopologyTests {
     }
 
     private TopologyTestDriver driver() {
-        var topologyFunction = new OrderAnalyticsTopologyConfig().orderAnalyticsTopology(written::put);
+        var topologyFunction = OrderAnalyticsTopologyConfig.topology(written::put);
         StreamsBuilder builder = new StreamsBuilder();
         topologyFunction.accept(builder.stream(INPUT_TOPIC, OrderAnalyticsTopologyConfig.consumed()));
         Topology topology = builder.build();

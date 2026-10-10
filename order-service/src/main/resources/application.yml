@@ -58,17 +58,7 @@ spring:
       on-profile: kafka
   cloud:
     function:
-      definition: updateOrderOnPaymentConfirmed;updateOrderOnPaymentFailed;orderAnalyticsTopology
-      kafka:
-        streams:
-          binder:
-            # O6's windowed aggregation is a Kafka Streams application, so it needs its own
-            # application id (which also names its state store / changelog topics).
-            application-id: order-analytics
-            configuration:
-              default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
-              default.value.serde: org.springframework.kafka.support.serializer.JsonSerde
-              spring.json.trusted.packages: com.ecommerce.orderservice.*
+      definition: updateOrderOnPaymentConfirmed;updateOrderOnPaymentFailed
     stream:
       bindings:
         updateOrderOnPaymentConfirmed-in-0:
@@ -77,14 +67,15 @@ spring:
         updateOrderOnPaymentFailed-in-0:
           destination: payment.failed
           group: order-service
-        # O6 — consumes the SAME order.created topic Order Service already publishes to (no new
-        # topic); the group is separate because this is a read-side projection, not a command
-        # dispatch, and it must not steal messages from Inventory Service's I2 consumer.
-        orderAnalyticsTopology-in-0:
-          destination: order.created
-          group: order-service-analytics
-          binder: kafka-streams
 
+# O6's topology runs the Kafka Streams library directly (see analytics.OrderAnalyticsTopologyConfig)
+# instead of through a Spring Cloud Stream binder: the Kafka Streams binder and the Kafka binder
+# cannot coexist in one application, and this service needs the latter for its O5 command consumers.
+# It consumes order.created — the topic O1 already publishes to — so no extra topic is introduced.
 app:
+  analytics:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    application-id: order-analytics
+    state-dir: ${ORDER_ANALYTICS_STATE_DIR:${java.io.tmpdir}/order-analytics-state}
   kafka:
     enabled: true

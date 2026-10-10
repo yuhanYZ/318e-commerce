@@ -50,17 +50,7 @@ spring:
       on-profile: kafka
   cloud:
     function:
-      definition: deductStockOnOrderCreated;releaseStockOnOrderCancelled;releaseStockOnPaymentFailed;lowStockAlertTopology
-      kafka:
-        streams:
-          binder:
-            # I4's alert projection is a Kafka Streams application, so it needs its own
-            # application id (which also names its state store / changelog topics).
-            application-id: inventory-alerts
-            configuration:
-              default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
-              default.value.serde: org.springframework.kafka.support.serializer.JsonSerde
-              spring.json.trusted.packages: com.ecommerce.inventoryservice.*
+      definition: deductStockOnOrderCreated;releaseStockOnOrderCancelled;releaseStockOnPaymentFailed
     stream:
       bindings:
         deductStockOnOrderCreated-in-0:
@@ -72,13 +62,15 @@ spring:
         releaseStockOnPaymentFailed-in-0:
           destination: payment.failed
           group: inventory-service
-        # I4 — consumes Inventory's own republished stock events (no new integration topic for the
-        # output: the topology sinks straight into the low_stock_alert store).
-        lowStockAlertTopology-in-0:
-          destination: stock.changed
-          group: inventory-service-alerts
-          binder: kafka-streams
 
+# I4's topology runs the Kafka Streams library directly (see analytics.LowStockAlertTopologyConfig)
+# instead of through a Spring Cloud Stream binder: the Kafka Streams binder and the Kafka binder
+# cannot coexist in one application, and this service needs the latter for its I2/I5 consumers.
+# It consumes stock.changed, which this service republishes its own stock events to.
 app:
+  alerts:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    application-id: inventory-alerts
+    state-dir: ${INVENTORY_ALERTS_STATE_DIR:${java.io.tmpdir}/inventory-alerts-state}
   kafka:
     enabled: true

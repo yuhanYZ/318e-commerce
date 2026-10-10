@@ -72,8 +72,7 @@ class LowStockAlertTopologyTests {
     }
 
     private TopologyTestDriver driver() {
-        LowStockAlertTopologyConfig topologyConfig = new LowStockAlertTopologyConfig(THRESHOLD);
-        var topologyFunction = topologyConfig.lowStockAlertTopology(emitted::add);
+        var topologyFunction = LowStockAlertTopologyConfig.topology(emitted::add, THRESHOLD);
         StreamsBuilder builder = new StreamsBuilder();
         topologyFunction.accept(builder.stream(INPUT_TOPIC, LowStockAlertTopologyConfig.consumed()));
         Topology topology = builder.build();
