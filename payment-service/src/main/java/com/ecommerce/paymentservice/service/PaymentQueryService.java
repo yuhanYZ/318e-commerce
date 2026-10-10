@@ -1,5 +1,6 @@
 package com.ecommerce.paymentservice.service;
 
+import com.ecommerce.paymentservice.domain.OrderId;
 import com.ecommerce.paymentservice.domain.Payment;
 import com.ecommerce.paymentservice.domain.Refund;
 import com.ecommerce.paymentservice.dto.PaymentPageResponse;
@@ -15,9 +16,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * PAY2 (getPaymentByOrderId) / PAY4 (listAllPayments). No ownership check on PAY2 — the contract
- * test has no "not owner" 403 scenario for payments (unlike Order Service's O2); PAY4's Admin-only
- * restriction is enforced entirely by SecurityConfig's static path rule.
+ * Query Application Service for Payment Service — specs/iter2/6-cqrs-command-query.md §3.2.
+ * PAY2 (getPaymentByOrderId) / PAY4 (listAllPayments). Reads only.
  */
 @Service
 @Transactional(readOnly = true)
@@ -32,9 +32,13 @@ public class PaymentQueryService {
     }
 
     public PaymentResponse getPaymentByOrderId(String orderId) {
-        Payment payment = paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(orderId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound",
-                        "No payment found for this order"));
+        Payment payment;
+        try {
+            payment = paymentRepository.findFirstByOrderIdOrderByCreatedAtDesc(new OrderId(orderId))
+                    .orElseThrow(PaymentQueryService::notFound);
+        } catch (IllegalArgumentException ex) {
+            throw notFound();
+        }
         return PaymentMapper.toResponse(payment);
     }
 
@@ -56,5 +60,9 @@ public class PaymentQueryService {
                 payments.getTotalElements(),
                 refunds.getContent().stream().map(RefundMapper::toResponse).toList(),
                 refunds.getTotalElements());
+    }
+
+    private static ApiException notFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "No payment found for this order");
     }
 }

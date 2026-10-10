@@ -1,6 +1,8 @@
 package com.ecommerce.productservice.service;
 
+import com.ecommerce.productservice.domain.CategoryId;
 import com.ecommerce.productservice.domain.Product;
+import com.ecommerce.productservice.domain.ProductId;
 import com.ecommerce.productservice.domain.ProductStatus;
 import com.ecommerce.productservice.dto.InventoryStockView;
 import com.ecommerce.productservice.dto.ProductDetailResponse;
@@ -20,8 +22,8 @@ import org.springframework.web.client.RestTemplate;
 import java.util.List;
 
 /**
- * Query Application Service for Product Service — specs/iter2/6-cqrs-command-query.md §3.
- * Covers P1 (browse), P2 (get by id incl. live stock), P3 (search).
+ * Query Application Service for Product Service — specs/iter2/6-cqrs-command-query.md §3.2.
+ * Covers P1 (browse), P2 (get by id incl. live stock), P3 (search). Reads only; never mutates.
  */
 @Service
 @Transactional(readOnly = true)
@@ -42,7 +44,8 @@ public class ProductQueryService {
     public ProductPageResponse browseProducts(String categoryId, int page, int size) {
         PageRequest pageable = PageRequest.of(page, size);
         Page<Product> result = (categoryId != null)
-                ? productRepository.findByStatusAndCategoryId(ProductStatus.ACTIVE, categoryId, pageable)
+                ? productRepository.findByStatusAndCategoryId(ProductStatus.ACTIVE, new CategoryId(categoryId),
+                        pageable)
                 : productRepository.findByStatus(ProductStatus.ACTIVE, pageable);
         List<ProductResponse> content = result.getContent().stream().map(ProductMapper::toResponse).toList();
         return new ProductPageResponse(content, result.getNumber(), result.getTotalElements());
@@ -56,13 +59,18 @@ public class ProductQueryService {
     }
 
     /**
-     * P2 — an inter-service call to Inventory Service. Any failure of that call (404 = untracked
-     * product, or the service being unreachable) is treated as "stock unknown" rather than
-     * failing the whole product-details request: stockAvailable=0, isInStock=false.
+     * P2 — an inter-service call to Inventory Service. Per the contract, a product Inventory does
+     * not track (404) is reported as {@code stockAvailable=0, isInStock=false} rather than failing
+     * the whole product-details request; any other REST failure is treated the same way.
      */
     public ProductDetailResponse getProductById(String productId) {
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "Product not found"));
+        Product product;
+        try {
+            product = productRepository.findById(new ProductId(productId))
+                    .orElseThrow(ProductQueryService::productNotFound);
+        } catch (IllegalArgumentException ex) {
+            throw productNotFound();
+        }
 
         int stockAvailable = 0;
         boolean isInStock = false;
@@ -74,11 +82,14 @@ public class ProductQueryService {
                 isInStock = stock.isAvailable();
             }
         } catch (RestClientException ex) {
-            // Inventory has no record for this product, or is unreachable — report as out of
-            // stock rather than failing the product-details request (spec: 404 from Inventory
-            // means stockAvailable=0, isInStock=false; treated the same for any other REST error).
+            // Inventory has no record for this product, or is unreachable — reported as out of
+            // stock rather than failing the product-details request.
         }
 
         return ProductMapper.toDetailResponse(product, stockAvailable, isInStock);
+    }
+
+    private static ApiException productNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "Product not found");
     }
 }

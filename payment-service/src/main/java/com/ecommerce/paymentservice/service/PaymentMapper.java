@@ -4,6 +4,7 @@ import com.ecommerce.paymentservice.domain.Payment;
 import com.ecommerce.paymentservice.dto.MoneyDto;
 import com.ecommerce.paymentservice.dto.PaymentResponse;
 
+/** Maps the aggregate onto the API contract's DTOs — specs/iter2/openapi-contract-v2.yaml. */
 final class PaymentMapper {
 
     private PaymentMapper() {
@@ -11,9 +12,9 @@ final class PaymentMapper {
 
     static PaymentResponse toResponse(Payment payment) {
         return new PaymentResponse(
-                payment.getId(),
-                payment.getOrderId(),
-                new MoneyDto(payment.getAmount(), payment.getCurrency()),
+                payment.getId().value(),
+                payment.getOrderId().value(),
+                new MoneyDto(payment.getAmount().amount(), payment.getAmount().currency()),
                 payment.getStatus().name(),
                 payment.getMethod(),
                 payment.getCreatedAt());

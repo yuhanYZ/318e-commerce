@@ -1,25 +1,19 @@
 package com.ecommerce.aicustomerservice;
 
 /**
- * Phase 3 test seam (see AiCustomerServiceContractTests): a single-abstract-method interface so
- * the contract test can supply a deterministic {@code @Primary} stub bean
- * ({@code (sessionId, userMessage) -> "This is a stubbed AI reply for testing."}) without network
- * access or an API key. Declared top-level in this package (not a sub-package) because the test
- * class references {@code ChatAgent} with no import statement.
+ * Port for the AI1/AI2 conversational agent. The real implementation is
+ * {@code ai.ChatAgentConfig}'s LangChain4j-backed bean; the contract test supplies a deterministic
+ * {@code @Primary} stub so the API contract can be verified without network access or an API key.
  *
- * The real LangChain4j-backed implementation is {@code ai.ChatAgentConfig}'s {@code chatAgent}
- * bean, active on every profile except "test" (see that class for why).
+ * @param sessionId   the conversation session (grounding/context only)
+ * @param userMessage the customer's message text
+ * @param bearerToken the caller's own Authorization header, forwarded unchanged to Order Service so
+ *                    its per-user ownership check (O2) still applies to whatever the agent reads —
+ *                    the agent must never be able to read another customer's order
+ * @return the AI's reply text
  */
 @FunctionalInterface
 public interface ChatAgent {
 
-    /**
-     * @param sessionId the conversation session the message belongs to (grounding context only —
-     *                   this method intentionally carries no caller bearer token, since the test
-     *                   seam's signature is fixed to exactly these two String parameters; see
-     *                   ai.ProductLookupTool's Javadoc for what that means for tool-call scope)
-     * @param userMessage the customer's message text
-     * @return the AI's reply text
-     */
-    String reply(String sessionId, String userMessage);
+    String reply(String sessionId, String userMessage, String bearerToken);
 }

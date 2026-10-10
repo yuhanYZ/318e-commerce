@@ -1,4 +1,5 @@
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\ai\ChatAgentConfig.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\ai\OrderLookupTool.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\ai\ProductLookupTool.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\AiCustomerServiceApplication.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\ChatAgent.java
@@ -7,8 +8,15 @@ D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustom
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\controller\AiChatController.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\ConversationMessage.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\ConversationSession.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\DomainEvent.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\MessageSent.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\Sender.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\SessionClosed.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\SessionEscalated.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\SessionId.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\SessionStarted.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\SessionStatus.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\domain\UserId.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\dto\ChatMessageRequest.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\dto\ChatMessageResponse.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\dto\ErrorResponse.java
@@ -26,3 +34,4 @@ D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustom
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\service\ConversationCommandService.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\service\ConversationMapper.java
 D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\service\ConversationQueryService.java
+D:\projects\318 project\ai-customer-service\src\main\java\com\ecommerce\aicustomerservice\service\DomainEventPublisher.java
