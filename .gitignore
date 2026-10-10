@@ -1,0 +1,7 @@
+# Maven build output. These were previously committed (362 files), which made every
+# build produce diff noise - compiled classes, copied application.yml and surefire reports.
+target/
+
+# JVM crash dumps / Kafka Streams leftovers
+hs_err_pid*.log
+replay_pid*.log
