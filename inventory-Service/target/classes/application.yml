@@ -50,7 +50,17 @@ spring:
       on-profile: kafka
   cloud:
     function:
-      definition: deductStockOnOrderCreated;releaseStockOnOrderCancelled;releaseStockOnPaymentFailed
+      definition: deductStockOnOrderCreated;releaseStockOnOrderCancelled;releaseStockOnPaymentFailed;lowStockAlertTopology
+      kafka:
+        streams:
+          binder:
+            # I4's alert projection is a Kafka Streams application, so it needs its own
+            # application id (which also names its state store / changelog topics).
+            application-id: inventory-alerts
+            configuration:
+              default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+              default.value.serde: org.springframework.kafka.support.serializer.JsonSerde
+              spring.json.trusted.packages: com.ecommerce.inventoryservice.*
     stream:
       bindings:
         deductStockOnOrderCreated-in-0:
@@ -62,6 +72,12 @@ spring:
         releaseStockOnPaymentFailed-in-0:
           destination: payment.failed
           group: inventory-service
+        # I4 — consumes Inventory's own republished stock events (no new integration topic for the
+        # output: the topology sinks straight into the low_stock_alert store).
+        lowStockAlertTopology-in-0:
+          destination: stock.changed
+          group: inventory-service-alerts
+          binder: kafka-streams
 
 app:
   kafka:

@@ -8,12 +8,15 @@ import com.ecommerce.inventoryservice.domain.StockItemAggregate;
 import com.ecommerce.inventoryservice.dto.StockAdjustmentRequest;
 import com.ecommerce.inventoryservice.dto.StockResponse;
 import com.ecommerce.inventoryservice.exception.ApiException;
+import com.ecommerce.inventoryservice.integration.StockChangedEvent;
 import com.ecommerce.inventoryservice.repository.InventoryReadModelRepository;
 import com.ecommerce.inventoryservice.repository.LowStockAlertRepository;
 import com.ecommerce.inventoryservice.repository.StockAdjustmentLogRepository;
 import com.ecommerce.inventoryservice.repository.StockEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.stream.function.StreamBridge;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,17 +43,26 @@ public class InventoryCommandService {
     private final StockAdjustmentLogRepository adjustmentLogRepository;
     private final LowStockAlertRepository lowStockAlertRepository;
     private final InventoryPolicyService policyService;
+    private final StreamBridge streamBridge;
+    private final boolean kafkaEnabled;
+    private final DomainEventPublisher domainEventPublisher;
 
     public InventoryCommandService(StockEventRepository stockEventRepository,
                                     InventoryReadModelRepository readModelRepository,
                                     StockAdjustmentLogRepository adjustmentLogRepository,
                                     LowStockAlertRepository lowStockAlertRepository,
-                                    InventoryPolicyService policyService) {
+                                    InventoryPolicyService policyService,
+                                    StreamBridge streamBridge,
+                                    @Value("${app.kafka.enabled:false}") boolean kafkaEnabled,
+                                    DomainEventPublisher domainEventPublisher) {
         this.stockEventRepository = stockEventRepository;
         this.readModelRepository = readModelRepository;
         this.adjustmentLogRepository = adjustmentLogRepository;
         this.lowStockAlertRepository = lowStockAlertRepository;
         this.policyService = policyService;
+        this.streamBridge = streamBridge;
+        this.kafkaEnabled = kafkaEnabled;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     /**
@@ -71,7 +83,7 @@ public class InventoryCommandService {
         adjustmentLogRepository.save(new StockAdjustmentLog(UUID.randomUUID().toString(), productId, adjustedBy,
                 request.delta(), request.reason(), Instant.now()));
 
-        evaluateLowStockAlert(productId, aggregate.getQuantityAvailable());
+        projectStockChange(productId, newEvent, aggregate.getQuantityAvailable());
 
         return toResponse(aggregate);
     }
@@ -94,7 +106,7 @@ public class InventoryCommandService {
             StockEvent newEvent = aggregate.deduct(quantity, orderId);
             stockEventRepository.save(newEvent);
             upsertReadModel(aggregate);
-            evaluateLowStockAlert(productId, aggregate.getQuantityAvailable());
+            projectStockChange(productId, newEvent, aggregate.getQuantityAvailable());
         } catch (ApiException ex) {
             log.warn("I2: rejected stock deduction for productId={}, orderId={}, quantity={}: {}",
                     productId, orderId, quantity, ex.getMessage());
@@ -121,7 +133,7 @@ public class InventoryCommandService {
         StockEvent newEvent = aggregate.release(quantity, orderId);
         stockEventRepository.save(newEvent);
         upsertReadModel(aggregate);
-        evaluateLowStockAlert(productId, aggregate.getQuantityAvailable());
+        projectStockChange(productId, newEvent, aggregate.getQuantityAvailable());
     }
 
     /**
@@ -146,16 +158,35 @@ public class InventoryCommandService {
         readModelRepository.save(model);
     }
 
-    /** I4 — trigger a new alert when crossing below the threshold; resolve it when clearing back above. */
+    /**
+     * A stock change reaches the I4 projection in one of two mutually exclusive ways. Under the
+     * "kafka" profile the appended event is republished to {@code stock.changed} and the I4 Kafka
+     * Streams topology owns the alert lifecycle (specs/iter2/6-cqrs-command-query.md section 8).
+     * Otherwise — and therefore during {@code mvn test} — the threshold is evaluated inline here,
+     * in the same transaction as the append, exactly as before.
+     */
+    private void projectStockChange(String productId, StockEvent appendedEvent, int quantityAvailable) {
+        if (kafkaEnabled) {
+            streamBridge.send("stock.changed", new StockChangedEvent(productId, appendedEvent.getEventType(),
+                    appendedEvent.getQuantity(), appendedEvent.getDelta(), appendedEvent.getOccurredAt()));
+        } else {
+            evaluateLowStockAlert(productId, quantityAvailable);
+        }
+    }
+
+    /** I4 fallback path — trigger a new alert when crossing below the threshold; resolve it when clearing back above. */
     private void evaluateLowStockAlert(String productId, int quantityAvailable) {
         boolean below = policyService.isBelowThreshold(quantityAvailable);
         Optional<LowStockAlert> openAlert = lowStockAlertRepository.findByStockItemIdAndResolvedAtIsNull(productId);
         if (below && openAlert.isEmpty()) {
-            lowStockAlertRepository.save(new LowStockAlert(UUID.randomUUID().toString(), productId, Instant.now()));
+            LowStockAlert alert = new LowStockAlert(UUID.randomUUID().toString(), productId, Instant.now());
+            lowStockAlertRepository.save(alert);
+            domainEventPublisher.publish(alert.pullDomainEvents());
         } else if (!below && openAlert.isPresent()) {
             LowStockAlert alert = openAlert.get();
             alert.resolve(Instant.now());
             lowStockAlertRepository.save(alert);
+            domainEventPublisher.publish(alert.pullDomainEvents());
         }
     }
 

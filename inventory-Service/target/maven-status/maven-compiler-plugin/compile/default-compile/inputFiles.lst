@@ -1,8 +1,16 @@
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\analytics\LowStockAlertSink.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\analytics\LowStockAlertSinkWriter.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\analytics\LowStockAlertTopologyConfig.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\analytics\ProductStock.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\analytics\StockAlertState.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\config\KafkaConsumerConfig.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\config\SecurityConfig.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\controller\InventoryController.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\DomainEvent.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\InventoryReadModel.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\LowStockAlert.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\LowStockAlertResolved.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\LowStockAlertTriggered.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\StockAdjustmentLog.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\StockEvent.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\domain\StockItemAggregate.java
@@ -16,6 +24,7 @@ D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventorys
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\integration\OrderCreatedEvent.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\integration\OrderItemPayload.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\integration\PaymentFailedEvent.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\integration\StockChangedEvent.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\InventoryServiceApplication.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\repository\InventoryReadModelRepository.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\repository\LowStockAlertRepository.java
@@ -25,6 +34,7 @@ D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventorys
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\security\JwtService.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\security\RestAccessDeniedHandler.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\security\RestAuthenticationEntryPoint.java
+D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\service\DomainEventPublisher.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\service\InventoryCommandService.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\service\InventoryPolicyService.java
 D:\projects\318 project\inventory-Service\src\main\java\com\ecommerce\inventoryservice\service\InventoryQueryService.java
