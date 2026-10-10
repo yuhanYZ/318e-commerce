@@ -1,6 +1,7 @@
 package com.ecommerce.userservice.service;
 
 import com.ecommerce.userservice.domain.User;
+import com.ecommerce.userservice.domain.UserId;
 import com.ecommerce.userservice.dto.UserProfileResponse;
 import com.ecommerce.userservice.exception.ApiException;
 import com.ecommerce.userservice.repository.UserRepository;
@@ -23,7 +24,7 @@ public class UserQueryService {
     }
 
     public UserProfileResponse getProfile(String userId) {
-        User user = userRepository.findById(userId)
+        User user = userRepository.findById(new UserId(userId))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "User not found"));
         return UserMapper.toProfileResponse(user);
     }
