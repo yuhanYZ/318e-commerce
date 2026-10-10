@@ -1,6 +1,11 @@
 # Domain Models Specification - Product Service
 
-Evolution from `specs/3-domain-models.md`:
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
+Evolution from `specs/iter1/3-domain-models.md` (Iteration 1, archived for history):
 - `Product` promoted to an aggregate root; `price` and `status` expressed as value objects.
 - `Category` kept as a plain `Entity` (single-level only — `parentCategoryId` removed per earlier decision), since it has no invariants or lifecycle events of its own.
 - Implicit create/update/deactivate operations on `Product` made explicit as aggregate behaviors with domain events.

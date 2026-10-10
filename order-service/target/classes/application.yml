@@ -47,6 +47,9 @@ app:
     # this and OrderCommandService's Kafka publish calls are guaranteed no-ops. Activate with
     # --spring.profiles.active=kafka (or SPRING_PROFILES_ACTIVE=kafka) against a real broker - see
     # the repo's docker-compose.yml.
+  analytics:
+    window-minutes: ${ORDER_ANALYTICS_WINDOW_MINUTES:15}
+    default-currency: ${ORDER_ANALYTICS_DEFAULT_CURRENCY:AUD}
 
 ---
 spring:

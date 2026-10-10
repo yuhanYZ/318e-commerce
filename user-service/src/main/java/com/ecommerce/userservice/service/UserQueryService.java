@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Query Application Service for User Service — specs/iter2/6-cqrs-command-query.md §3.2.
- * Covers U3 (view).
+ * Covers U3a (view).
  */
 @Service
 @Transactional(readOnly = true)

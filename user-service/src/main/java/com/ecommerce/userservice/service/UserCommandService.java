@@ -27,7 +27,7 @@ import java.util.UUID;
 
 /**
  * Command Application Service for User Service — specs/iter2/6-cqrs-command-query.md §3.1.
- * Covers U1, U2, U3 (update), U4, U5.
+ * Covers U1, U2, U3b (update), U4, U5.
  */
 @Service
 @Transactional
@@ -115,7 +115,7 @@ public class UserCommandService {
         return new AuthResponse(token, user.getId());
     }
 
-    /** U3 — Update Profile (partial; only non-null fields change). */
+    /** U3b — Update Profile (partial; only non-null fields change). */
     public UserProfileResponse updateProfile(String userId, UpdateProfileRequest request) {
         User user = getUserOrThrow(userId);
         if (request.name() != null) {

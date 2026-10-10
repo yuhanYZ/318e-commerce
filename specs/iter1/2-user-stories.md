@@ -1,6 +1,8 @@
+> **Archived — Iteration 1 (superseded by [`specs/iter2/`](../iter2/)).** Kept for historical reference only; do not use as the current design of record.
+
 # User Stories
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
+**Project:** 318e-e-commerce
 **Status:** Draft — for team review
 **Related docs:** [1-technical-architecture.md](./1-technical-architecture.md)
 

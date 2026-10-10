@@ -56,6 +56,7 @@ public class OrderCommandService {
     private final String inventoryBaseUrl;
     private final StreamBridge streamBridge;
     private final boolean kafkaEnabled;
+    private final OrderAnalyticsService analyticsService;
 
     public OrderCommandService(OrderRepository orderRepository,
                                 @Qualifier("productRestTemplate") RestTemplate productRestTemplate,
@@ -63,7 +64,8 @@ public class OrderCommandService {
                                 @Value("${app.product-service.base-url}") String productBaseUrl,
                                 @Value("${app.inventory-service.base-url}") String inventoryBaseUrl,
                                 StreamBridge streamBridge,
-                                @Value("${app.kafka.enabled:false}") boolean kafkaEnabled) {
+                                @Value("${app.kafka.enabled:false}") boolean kafkaEnabled,
+                                OrderAnalyticsService analyticsService) {
         this.orderRepository = orderRepository;
         this.productRestTemplate = productRestTemplate;
         this.inventoryRestTemplate = inventoryRestTemplate;
@@ -71,6 +73,7 @@ public class OrderCommandService {
         this.inventoryBaseUrl = inventoryBaseUrl;
         this.streamBridge = streamBridge;
         this.kafkaEnabled = kafkaEnabled;
+        this.analyticsService = analyticsService;
     }
 
     /** O1 — Place an Order. */
@@ -110,6 +113,7 @@ public class OrderCommandService {
         items.forEach(order::addItem);
 
         orderRepository.save(order);
+        analyticsService.recordOrderPlaced(order, now);
         publishOrderCreated(order);
         return OrderMapper.toResponse(order);
     }

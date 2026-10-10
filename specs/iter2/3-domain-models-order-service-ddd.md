@@ -1,6 +1,11 @@
 # Domain Models Specification - Order Service
 
-Evolution from `specs/3-domain-models.md`:
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
+Evolution from `specs/iter1/3-domain-models.md` (Iteration 1, archived for history):
 - `Order` promoted to an aggregate root; `OrderItem` remains composed inside it (not an independent aggregate, unchanged from the original design).
 - `status` transitions made explicit as aggregate behaviors, each emitting its own domain event instead of a single generic "status changed" update.
 - `userId`/`productId` fields re-typed as value objects to make the cross-service, ID-only nature of these references explicit.
@@ -183,7 +188,7 @@ Evolution from `specs/3-domain-models.md`:
 
 #### 2.6.1 `OrderAnalyticsWindow`
 
-Not part of the `OrderAggregate` write model — a CQRS read-side projection updated synchronously, in the same transaction as `OrderPlaced`, by the Spring Cloud Stream function backing O6 (see `6-cqrs-command-query.md` §4.2 and §7).
+Not part of the `OrderAggregate` write model — a CQRS read-side projection maintained by the Spring Cloud Stream tumbling-window function backing O6 (see `6-cqrs-command-query.md` §4.2 and §7).
 
 | Field | Type | Description | Constraints |
 | :--- | :--- | :--- | :--- |

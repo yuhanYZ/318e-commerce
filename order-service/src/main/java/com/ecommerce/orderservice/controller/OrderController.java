@@ -1,8 +1,10 @@
 package com.ecommerce.orderservice.controller;
 
 import com.ecommerce.orderservice.dto.CreateOrderRequest;
+import com.ecommerce.orderservice.dto.OrderAnalyticsResponse;
 import com.ecommerce.orderservice.dto.OrderPageResponse;
 import com.ecommerce.orderservice.dto.OrderResponse;
+import com.ecommerce.orderservice.service.OrderAnalyticsService;
 import com.ecommerce.orderservice.service.OrderCommandService;
 import com.ecommerce.orderservice.service.OrderQueryService;
 import jakarta.validation.Valid;
@@ -24,10 +26,13 @@ public class OrderController {
 
     private final OrderCommandService commandService;
     private final OrderQueryService queryService;
+    private final OrderAnalyticsService analyticsService;
 
-    public OrderController(OrderCommandService commandService, OrderQueryService queryService) {
+    public OrderController(OrderCommandService commandService, OrderQueryService queryService,
+                           OrderAnalyticsService analyticsService) {
         this.commandService = commandService;
         this.queryService = queryService;
+        this.analyticsService = analyticsService;
     }
 
     @PostMapping
@@ -41,6 +46,12 @@ public class OrderController {
                                            @RequestParam(defaultValue = "0") int page,
                                            @RequestParam(defaultValue = "20") int size) {
         return queryService.listMyOrders(authentication.getName(), page, size);
+    }
+
+    @GetMapping("/analytics/realtime")
+    public OrderAnalyticsResponse getRealtimeOrderAnalytics(
+            @RequestParam(required = false) Integer windowMinutes) {
+        return analyticsService.getRealtimeAnalytics(windowMinutes);
     }
 
     @GetMapping("/{id}")

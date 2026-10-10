@@ -1,7 +1,9 @@
 # CQRS Command and Query Specification
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
 
 ## 1. Purpose
 This document defines how the 318 E-Commerce Platform applies CQRS, including:
@@ -50,8 +52,8 @@ This document defines how the 318 E-Commerce Platform applies CQRS, including:
 
 ### 4.2 Read Model (Projections)
 - `inventory_read_model`: driven by `StockItemAggregate` events. Used by the I1 query.
-- `order_analytics_window` (Order Service): one-minute tumbling buckets (`orderCount`, `totalRevenue`) derived from `OrderPlaced`, updated synchronously in the same transaction as order placement. Used by the O6 query. See `3-domain-models-order-service-ddd.md` §2.6.
-- All other queries (U3-view, P1-P3, O2, O3, I4, PAY2, PAY4, AI4) read directly from their own service's CRUD entity store — there is no separate projection for CRUD aggregates.
+- `order_analytics_window` (Order Service): one-minute tumbling buckets (`orderCount`, `totalRevenue`) derived from `OrderPlaced`, maintained by a Spring Cloud Stream one-minute tumbling-window aggregation over `order.created`. Used by the O6 query. See `3-domain-models-order-service-ddd.md` §2.6.
+- All other queries (U3a, P1-P3, O2, O3, I4, PAY2, PAY4, AI4) read directly from their own service's CRUD entity store — there is no separate projection for CRUD aggregates.
 
 ---
 
@@ -61,8 +63,8 @@ This document defines how the 318 E-Commerce Platform applies CQRS, including:
 |:---|:---|:---|:---|:---|
 | User Service | U1 | Register an Account | Command | Yes |
 | User Service | U2 | Login | Command | Yes |
-| User Service | U3 | View Profile | Query | No |
-| User Service | U3 | Update Profile | Command | Yes |
+| User Service | U3a | View Profile | Query | No |
+| User Service | U3b | Update Profile | Command | Yes |
 | User Service | U4 | Reset Password | Command | Yes |
 | User Service | U5 | Deactivate Account | Command | Yes |
 | Product Service | P1 | Browse Product Catalog | Query | No |
@@ -97,7 +99,7 @@ This document defines how the 318 E-Commerce Platform applies CQRS, including:
 | :--- | :--- | :--- | :--- | :--- |
 | `RegisterUserCommand` | `UserAggregate` | U1 | `UserRegistered` | CRUD |
 | `LoginCommand` | `UserAggregate` | U2 | `UserLoggedIn`, or `AccountLocked` (after 5 failures / 10 min) | CRUD |
-| `UpdateProfileCommand` | `UserAggregate` | U3 | `ProfileUpdated` | CRUD |
+| `UpdateProfileCommand` | `UserAggregate` | U3b | `ProfileUpdated` | CRUD |
 | `RequestPasswordResetCommand` | `PasswordResetTokenAggregate` | U4 | `PasswordResetRequested` | CRUD |
 | `ConfirmPasswordResetCommand` | `PasswordResetTokenAggregate` + `UserAggregate` | U4 | `PasswordResetCompleted` | CRUD |
 | `DeactivateAccountCommand` | `UserAggregate` | U5 | `AccountDeactivated` | CRUD |
@@ -116,7 +118,7 @@ This document defines how the 318 E-Commerce Platform applies CQRS, including:
 | `PostConversationMessageCommand` | `ConversationSessionAggregate` | AI1, AI2 | `MessageSent` (×2: the user's message and the AI reply) | CRUD |
 | `EscalateSessionCommand` | `ConversationSessionAggregate` | AI3 | `SessionEscalated` | CRUD |
 
-Command responses return outcome metadata (success/failure, IDs, version). They do not return read model projections.
+Command responses return the mutated resource's current representation, or outcome metadata (success/failure, IDs, version) for commands with no resource body. They never read from query-side projections.
 
 ---
 
@@ -124,13 +126,13 @@ Command responses return outcome metadata (success/failure, IDs, version). They 
 
 | Query | Story | Read Source | Consistency | Notes |
 | :--- | :--- | :--- | :--- | :--- |
-| `GetProfileQuery(userId)` | U3 | User CRUD store | Strong (local DB) | |
+| `GetProfileQuery(userId)` | U3a | User CRUD store | Strong (local DB) | |
 | `BrowseProductCatalogQuery(categoryId)` | P1 | Product CRUD store | Strong (local DB) | |
 | `GetProductDetailsQuery(productId)` | P2 | Product CRUD store + `inventory_read_model` | Strong (Product) / Eventual (bounded, stock portion) | Live stock is fetched via a synchronous call to Inventory Service's `CheckStockAvailabilityQuery` |
 | `SearchProductsQuery(keyword)` | P3 | Product CRUD store | Strong (local DB) | |
 | `ViewOrderStatusQuery(orderId)` | O2 | Order CRUD store | Strong (local DB) | |
 | `ViewOrderHistoryQuery(userId)` | O3 | Order CRUD store | Strong (local DB) | |
-| `GetRealtimeOrderAnalyticsQuery(windowMinutes)` | O6 | `order_analytics_window` | Eventual (bounded) | Projected from `OrderPlaced` via a Spring Cloud Stream tumbling-bucket function, updated in the same transaction as order placement (analogous to `5-event-sourcing.md` §3.5's inventory read model). Admin only. Default `windowMinutes` is `app.analytics.window-minutes` (15) |
+| `GetRealtimeOrderAnalyticsQuery(windowMinutes)` | O6 | `order_analytics_window` | Eventual (bounded) | Projected from the `order.created` stream via a Spring Cloud Stream one-minute tumbling-window function (analogous to `5-event-sourcing.md` §3.5's inventory read model). Admin only. Default `windowMinutes` is `app.analytics.window-minutes` (15) |
 | `CheckStockAvailabilityQuery(productId)` | I1 | `inventory_read_model` | Eventual (bounded) | Projected from the `StockItemAggregate` event stream; updated in the same transaction as the event append in this iteration (see `5-event-sourcing.md` §3.5). Returns 404 for an untracked `productId` |
 | `ListLowStockAlertsQuery` | I4 | LowStockAlert CRUD store | Strong (local DB) | `LowStockAlertAggregate` is CRUD, not projected from events |
 | `ViewPaymentStatusQuery(orderId)` | PAY2 | Payment CRUD store | Strong (local DB) | |
@@ -152,6 +154,6 @@ Domain events are internal to a service. The subset below is translated 1:1 into
 | `PaymentFailedEvent` | `payment.failed` | Payment (`PaymentFailed`) | Order → `UpdateOrderOnPaymentEventCommand`; Inventory → `ReleaseStockOnOrderCancelledCommand` | `paymentId`, `orderId`, `occurredAt` |
 | `RefundProcessedEvent` | `payment.refunded` | Payment (`RefundProcessed`) | *(none in this iteration)* | `refundId`, `paymentId`, `orderId`, `occurredAt` |
 
-All consumers are idempotent on the event's business key (`orderId` [+ `productId`]). The iter1 `StockUpdatedEvent` and `StockReservationFailedEvent` are **not** part of this catalog.
+All consumers are idempotent on the event's business key (`orderId` [+ `productId`]). The Iteration 1 (archived) `StockUpdatedEvent` and `StockReservationFailedEvent` are **not** part of this catalog.
 
-O6's `OrderAnalyticsWindow` projection is **not** a Kafka consumer — it reacts to the `OrderPlaced` domain event in-process (same service, same transaction as placing the order), the same way I4 reacts to `StockItemAggregate`'s own events without a Kafka round-trip. No new topic is introduced.
+The O6 projection consumes the existing `order.created` stream; no additional Kafka topic is introduced.

@@ -1,8 +1,10 @@
 # User Stories — Inventory Service
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
-**Source:** Split from [2-user-stories.md](./2-user-stories.md)
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+**Source:** Split from [iter1/2-user-stories.md](../iter1/2-user-stories.md) — Iteration 1, archived for history.
 
 ## User Story Overview
 

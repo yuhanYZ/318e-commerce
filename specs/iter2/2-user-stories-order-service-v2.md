@@ -1,8 +1,10 @@
 # User Stories — Order Service
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
-**Source:** Split from [2-user-stories.md](./2-user-stories.md)
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+**Source:** Split from [iter1/2-user-stories.md](../iter1/2-user-stories.md) — Iteration 1, archived for history.
 
 ## User Story Overview
 
@@ -56,7 +58,7 @@
 ### User Story O6: View Real-Time Order Volume & Revenue Analytics
 - **As an** Admin, **I want to** see a rolling, real-time view of order volume and revenue over a recent sliding time window, so that I can monitor business performance and spot unusual spikes or drops as they happen.
 - **Scenario (Real-Time Analysis — Stream Processing):**
-  i. Every `OrderPlaced` event (the same domain event that triggers `OrderCreatedEvent` for Inventory Service) is also fed, in the same transaction, to a Spring Cloud Stream processing function inside Order Service that increments a one-minute tumbling bucket (`orderCount`, `totalRevenue`) keyed by the event's occurrence minute.
+  i. Every `OrderPlaced` event (the same domain event that triggers `OrderCreatedEvent` for Inventory Service) is also fed to a Spring Cloud Stream tumbling-window function inside Order Service that maintains a one-minute tumbling bucket (`orderCount`, `totalRevenue`) keyed by the event's occurrence minute.
   ii. The Admin requests the current analytics snapshot from Order Service, specifying a sliding window size in minutes (e.g., the last 15 minutes).
   iii. Order Service sums all buckets whose `windowStart` falls within `[now - windowMinutes, now]`, discarding older buckets, and returns the aggregated `orderCount`, `totalRevenue`, and derived `averageOrderValue` for that rolling window.
   iv. No historical/day-level reporting is provided in this iteration — only the current rolling window (default 15 minutes, configurable via `app.analytics.window-minutes`).

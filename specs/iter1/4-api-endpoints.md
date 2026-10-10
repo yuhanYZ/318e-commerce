@@ -1,3 +1,5 @@
+> **Archived — Iteration 1 (superseded by [`specs/iter2/4-api-endpoints-v2.md`](../iter2/4-api-endpoints-v2.md)).** Kept for historical reference only; do not use as the current design of record.
+
 # API Endpoints Summary
 
 ## 1. User Service (`http://localhost:8081/api/v1`)

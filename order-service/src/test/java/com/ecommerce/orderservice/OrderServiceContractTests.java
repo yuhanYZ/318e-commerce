@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.UUID;
 
+import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
@@ -220,6 +221,51 @@ class OrderServiceContractTests {
     void listMyOrders_noToken_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/orders"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    // ---------------------------------------------------------------
+    // O6 — Real-Time Order Analytics (GET /orders/analytics/realtime)
+    // ---------------------------------------------------------------
+
+    @Test
+    void getRealtimeOrderAnalytics_admin_returns200Summary() throws Exception {
+        String productId = "PRD-" + UUID.randomUUID();
+        stubProductActive(productId, 25.00, 100);
+        stubInventory(productId, 100);
+        placeOrder(token("USR-BUYER-ANALYTICS-1", "CUSTOMER"), productId, 2);
+
+        mockMvc.perform(get("/api/v1/orders/analytics/realtime")
+                        .header("Authorization", "Bearer " + token("USR-ADMIN-1", "ADMIN"))
+                        .param("windowMinutes", "15"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.windowMinutes").value(15))
+                .andExpect(jsonPath("$.orderCount").value(greaterThanOrEqualTo(1)))
+                .andExpect(jsonPath("$.totalRevenue.currency").value("AUD"))
+                .andExpect(jsonPath("$.averageOrderValue.currency").value("AUD"))
+                .andExpect(jsonPath("$.generatedAt").exists());
+    }
+
+    @Test
+    void getRealtimeOrderAnalytics_customerRole_returns403() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics/realtime")
+                        .header("Authorization", "Bearer " + token("USR-BUYER-ANALYTICS-2", "CUSTOMER")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("Forbidden"));
+    }
+
+    @Test
+    void getRealtimeOrderAnalytics_noToken_returns401() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics/realtime"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void getRealtimeOrderAnalytics_invalidWindow_returns400ValidationFailed() throws Exception {
+        mockMvc.perform(get("/api/v1/orders/analytics/realtime")
+                        .header("Authorization", "Bearer " + token("USR-ADMIN-2", "ADMIN"))
+                        .param("windowMinutes", "0"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ValidationFailed"));
     }
 
     // ---------------------------------------------------------------

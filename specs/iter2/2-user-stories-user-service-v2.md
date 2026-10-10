@@ -1,8 +1,10 @@
 # User Stories — User Service
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
-**Source:** Split from [2-user-stories.md](./2-user-stories.md)
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+**Source:** Split from [iter1/2-user-stories.md](../iter1/2-user-stories.md) — Iteration 1, archived for history.
 
 ## User Story Overview
 
@@ -10,7 +12,8 @@
 |---|---|---|---|
 | User Service | U1 | Register an Account | Customer |
 | User Service | U2 | Login | Customer |
-| User Service | U3 | View / Update Profile | Customer |
+| User Service | U3a | View Profile | Customer |
+| User Service | U3b | Update Profile | Customer |
 | User Service | U4 | Reset Password | Customer |
 | User Service | U5 | Deactivate Account | Customer |
 
@@ -40,12 +43,17 @@
   ii. User Service verifies the credentials against the stored account.
   iii. If valid, User Service issues a JWT auth token and resets the failure counter; after 5 consecutive failures within 10 minutes, the account is locked (HTTP 423 `AccountLocked`) for 10 minutes, after which login is permitted again and the counter restarts. A `DEACTIVATED` account can never log in (HTTP 401).
 
-### User Story U3: View / Update Profile
-- **As a** Customer, **I want to** view and update my profile (name, address, phone).
+### User Story U3a: View Profile
+- **As a** Customer, **I want to** view my profile (name, address, phone).
 - **Scenario:**
   i. The authenticated user requests their profile from User Service.
   ii. User Service returns the current profile data.
-  iii. To update, the user submits changed fields; User Service validates and persists them.
+
+### User Story U3b: Update Profile
+- **As a** Customer, **I want to** update my profile (name, address, phone).
+- **Scenario:**
+  i. The authenticated user submits changed fields (name, address, and/or phone) to User Service.
+  ii. User Service validates and persists them, and returns the updated profile.
 
 ### User Story U4: Reset Password
 - **As a** Customer, **I want to** reset my password when I forget it.

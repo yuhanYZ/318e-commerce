@@ -1,3 +1,5 @@
+> **已归档 — 迭代一（已被 [`specs/iter2/`](../iter2/) 取代）。** 仅作历史留存，不作为当前设计依据。
+
 # 领域模型规格说明（Domain Models Specification）
 
 ## 1. 领域类与用户故事对照表（Domain Classes and Related User Stories）

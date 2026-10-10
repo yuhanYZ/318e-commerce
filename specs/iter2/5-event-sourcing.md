@@ -1,7 +1,9 @@
 # Event Sourcing Specification
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
 
 ## 1. Scope
 - This specification defines event sourcing for the **318 E-Commerce Platform**, where only `StockItemAggregate` (Inventory Service) is event-sourced.
@@ -32,7 +34,7 @@
 
 ### 3.2 Event Stream Identity
 - Stream key = `aggregateType` + `aggregateId`, e.g. `"StockItemAggregate:PROD-00123"`.
-- Each `productId` maps to exactly one `StockItem` stream (1:1, per `specs/3-domain-models.md` §8) — there is no per-warehouse or per-location dimension in the current architecture.
+- Each `productId` maps to exactly one `StockItem` stream (1:1, per `specs/iter1/3-domain-models.md` §8) — there is no per-warehouse or per-location dimension in the current architecture.
 
 ### 3.3 Event Types for `StockItemAggregate`
 

@@ -1,5 +1,10 @@
 # Technical Architecture (Iteration 2)
 
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
 ## Microservice Architecture
 This application contains six **Microservice Modules**:
 - **User Service**: Handles user registration, login, authentication, and profile management.
@@ -13,7 +18,7 @@ This application contains six **Microservice Modules**:
 Each microservice module is structured into four distinct layers:
 1. **Presentation Layer** (Controllers): Receives HTTP requests, performs basic input format validation, calls the Service Layer, and packages results into HTTP responses. Does not contain business logic.
 2. **Service Layer** (Business Logic): Orchestration, not implementation. Responsible for fetching data from the Repository, calling Domain layer methods to execute business rules, persisting results back via the Infrastructure layer, and cross-service coordination (e.g., Order Service calling Inventory Service to check stock).
-3. **Domain Layer** (Core Domain Models & Rules): Contains pure business logic only — no infrastructure concerns, no external calls. This is where core business rules and invariants live.
+3. **Domain Layer** (Core Domain Models & Rules): Holds the domain model — entities, value objects, aggregates — together with the business rules and invariants that operate on them. Domain classes carry JPA persistence annotations (`@Entity`) for mapping convenience, but contain no repository, messaging, or cross-service calls.
 4. **Infrastructure Layer** (Repositories, Kafka Producers/Consumers, LLM Clients): Handles persistence, message publishing/subscribing, and external API calls.
 
 ## CQRS View (Inventory Service)
@@ -35,7 +40,7 @@ The project is structured as a multi-module repository:
 - **Framework**: Spring Boot
     - **Controller Layer**: `@RestController`
     - **Service Layer**: `@Service`
-    - **Domain Layer**: `@Entity`
+    - **Domain Layer**: `@Entity` (persistence mapping only — repositories and messaging live in the Infrastructure layer)
     - **Infrastructure Layer**: `@Repository`
 - **Database**: H2 in-memory database for development (target: PostgreSQL)
 - **Messaging**: Apache Kafka (event-driven inter-service communication)

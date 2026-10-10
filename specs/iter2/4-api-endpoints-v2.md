@@ -1,13 +1,18 @@
 # API Endpoints Summary
 
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
 ## 1. User Service (`http://localhost:8081/api/v1`)
 
 | Feature | CQRS Type | Method | Endpoint Path | Request Body | Response (Success) | Inter-Service REST Dependencies |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **U1** | Command | `POST` | `/users/register` | `RegisterRequest` | `201 Created` (`UserResponse`) | None |
 | **U2** | Command | `POST` | `/users/login` | `LoginRequest` | `200 OK` (`AuthResponse`) | None |
-| **U3** | Query | `GET` | `/users/me` | *None* | `200 OK` (`UserProfileResponse`) | None |
-| **U3** | Command | `PUT` | `/users/me` | `UpdateProfileRequest` | `200 OK` (`UserProfileResponse`) | None |
+| **U3a** | Query | `GET` | `/users/me` | *None* | `200 OK` (`UserProfileResponse`) | None |
+| **U3b** | Command | `PUT` | `/users/me` | `UpdateProfileRequest` | `200 OK` (`UserProfileResponse`) | None |
 | **U4** | Command | `POST` | `/users/password-reset/request` | `PasswordResetRequest` | `202 Accepted` (*None*) | None |
 | **U4** | Command | `POST` | `/users/password-reset/confirm` | `PasswordResetConfirmRequest` | `200 OK` (*None*) | None |
 | **U5** | Command | `DELETE` | `/users/me` | *None* | `204 No Content` | None |
@@ -79,8 +84,8 @@
 
 1. Command endpoints use verbs as trailing actions only when state transition intent is explicit (e.g., `/cancel`, `/adjust`, `/deactivate`, `/escalate`, `/refund`).
 2. Query endpoints stay resource-oriented and side-effect free.
-3. Command responses return mutation outcome objects; query responses return read-model DTOs.
-4. Kafka-consumed events (O5, I2, I5) are not exposed as REST endpoints — they are internal event handlers, consistent with the event-driven, Database-per-Service design in `specs/3-domain-models.md` §8.
+3. Command responses return the mutated resource's representation, or an empty body for state-only commands (e.g. U5 deactivate); query responses return read DTOs.
+4. Kafka-consumed events (O5, I2, I5) are not exposed as REST endpoints — they are internal event handlers, consistent with the event-driven, Database-per-Service design in `specs/iter1/3-domain-models.md` §8.
 5. Admin-only endpoints (P4, I3, I4, PAY4, AI4) are not distinguished by path — authorization is enforced via `role = ADMIN` on the authenticated user, not by URL shape.
 6. Paginated queries (P1, O3, PAY4, AI4-list) accept optional `page` (default `0`) and `size` (default `20`, max `100`) and return `{ content, page, totalElements }`.
 

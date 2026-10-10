@@ -1,8 +1,12 @@
+# 318e-e-commerce — API contract specification
+# Status: Final
+# Version: 2.0
+# Date: 2026-10-10
 openapi: 3.0.3
 info:
   title: E-Commerce Microservices API Specification (Iteration 2)
   description: |
-    OpenAPI 3.0 specification for the 318e-e-commerce microservice application (CSCI318 capstone) —
+    OpenAPI 3.0 specification for the 318e-e-commerce microservice application —
     User, Product, Order, Inventory, Payment, and AI-Customer services, based on specs-iter2:
     `1-technical-architecture-v2.md`, `2-user-stories-*-v2.md`, `3-domain-models-*-ddd.md`,
     `4-api-endpoints-v2.md`, `5-event-sourcing.md`, and `6-cqrs-command-query.md`.
@@ -117,7 +121,7 @@ paths:
     get:
       tags:
         - User Service
-      summary: Get the current user's profile (Feature U3, Query)
+      summary: Get the current user's profile (Feature U3a, Query)
       operationId: getMyProfile
       security:
         - bearerAuth: []
@@ -134,7 +138,7 @@ paths:
     put:
       tags:
         - User Service
-      summary: Update name, address, or phone (Feature U3, Command)
+      summary: Update name, address, or phone (Feature U3b, Command)
       operationId: updateMyProfile
       security:
         - bearerAuth: []
@@ -533,10 +537,9 @@ paths:
       summary: Real-time order volume & revenue over a sliding window (Feature O6, Query, Admin only)
       description: |
         Reads the `order_analytics_window` projection — one-minute tumbling buckets of order count and
-        revenue, updated synchronously (same transaction) whenever `OrderPlaced` fires. Sums the buckets
-        falling within the trailing `windowMinutes` and returns aggregated volume/revenue stats. This is
-        a Spring Cloud Stream-based real-time analytics job, not a Kafka consumer (see
-        `6-cqrs-command-query.md` §7).
+        revenue, maintained by a Spring Cloud Stream one-minute tumbling-window aggregation over the
+        `order.created` stream. Sums the buckets falling within the trailing `windowMinutes` and returns
+        aggregated volume/revenue stats (see `6-cqrs-command-query.md` §7).
       operationId: getRealtimeOrderAnalytics
       security:
         - bearerAuth: []
@@ -1320,6 +1323,10 @@ components:
 
     PaymentPageResponse:
       type: object
+      description: |
+        PAY4's "all payment and refund records for reconciliation" — `content`/`page`/`totalElements`
+        page the Payment table; `refunds`/`totalRefundElements` independently page the Refund table
+        using the same `page`/`size` query parameters, newest first.
       properties:
         content:
           type: array
@@ -1331,6 +1338,13 @@ components:
         totalElements:
           type: integer
           example: 200
+        refunds:
+          type: array
+          items:
+            $ref: '#/components/schemas/RefundResponse'
+        totalRefundElements:
+          type: integer
+          example: 12
 
     RefundRequest:
       type: object
