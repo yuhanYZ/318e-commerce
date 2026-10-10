@@ -62,7 +62,7 @@
 | Feature | CQRS Type | Method | Endpoint Path | Request Body | Response (Success) | Inter-Service REST Dependencies |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **PAY1** | Command | `POST` | `/payments` | `PaymentRequest` | `201 Created` (`PaymentResponse`) | **Order Service**: `GET /orders/{id}` (order is `PENDING`, `amount` = `totalAmount`; caller's bearer token forwarded) |
-| **PAY2** | Query | `GET` | `/payments/order/{orderId}` | *None* | `200 OK` (`PaymentResponse`) | None |
+| **PAY2** | Query | `GET` | `/payments/order/{orderId}` | *None* | `200 OK` (`PaymentResponse`) | **Order Service**: `GET /orders/{id}` (the caller can read the payment's order; caller's bearer token forwarded) |
 | **PAY3** | Command | `POST` | `/payments/{id}/refund` | `RefundRequest` | `201 Created` (`RefundResponse`) | **Order Service**: `GET /orders/{id}` (order is `CANCELLED`; caller's bearer token forwarded) |
 | **PAY4** | Query | `GET` | `/payments?page={n}&size={m}` | *None* | `200 OK` (`PaymentPageResponse`) | None |
 
@@ -111,7 +111,7 @@
 | `ResourceNotFound` | `404` | Commands + Queries | Requested user/product/order/payment/session not found |
 | `ValidationFailed` | `400` | Commands + Queries | Invalid request shape or parameters |
 | `Unauthorized` | `401` | Commands + Queries requiring auth | Missing or invalid JWT |
-| `Forbidden` | `403` | P4, I3, I4, PAY4, AI4 | Authenticated user lacks the `ADMIN` role for this action |
+| `Forbidden` | `403` | O2, PAY2, P4, I3, I4, PAY4, AI4 | Authenticated user lacks the `ADMIN` role for this action, or the requested resource belongs to another user |
 | `AccountLocked` | `423` | U2 | Login blocked after 5 failed attempts within 10 minutes |
 | `StockInvariantViolation` | `409` | O1, I2, I3 | Inventory rule violation (e.g., available stock would go below zero) |
 | `OrderStateViolation` | `409` | O4, O5 | Order status transition denied (e.g., cancel an order that is already `CANCELLED` or `PAYMENT_FAILED`) |

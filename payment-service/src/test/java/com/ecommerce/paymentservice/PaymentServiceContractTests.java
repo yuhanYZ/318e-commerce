@@ -64,7 +64,8 @@ class PaymentServiceContractTests {
 
     private void stubOrder(String orderId, String status, double totalAmount) {
         MockRestServiceServer.bindTo(orderRestTemplate).ignoreExpectOrder(true).build()
-                .expect(requestTo("http://localhost:8083/api/v1/orders/" + orderId))
+                .expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo("http://localhost:8083/api/v1/orders/" + orderId))
                 .andExpect(method(org.springframework.http.HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {"id":"%s","userId":"USR-BUYER-1","status":"%s",
@@ -77,6 +78,16 @@ class PaymentServiceContractTests {
         return """
                 {"orderId":"%s","amount":{"amount":%s,"currency":"AUD"}}
                 """.formatted(orderId, amount);
+    }
+
+    /** Order Service being unable to show the caller the order (i.e. it is not theirs). */
+    private void stubOrderNotOwned(String orderId) {
+        MockRestServiceServer.bindTo(orderRestTemplate).ignoreExpectOrder(true).build()
+                .expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo("http://localhost:8083/api/v1/orders/" + orderId))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withStatus(org.springframework.http.HttpStatus.FORBIDDEN));
     }
 
     // ---------------------------------------------------------------
@@ -179,6 +190,25 @@ class PaymentServiceContractTests {
         mockMvc.perform(get("/api/v1/payments/order/{orderId}", "ORD-NEVER-PAID")
                         .header("Authorization", "Bearer " + token("USR-BUYER-7", "CUSTOMER")))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void getPaymentByOrderId_orderBelongsToSomeoneElse_returns403Forbidden() throws Exception {
+        String orderId = "ORD-" + UUID.randomUUID();
+        stubOrder(orderId, "PENDING", 12.00);
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token("USR-BUYER-9", "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 12.00)))
+                .andExpect(status().isCreated());
+
+        // A different customer asks for the payment of an order they do not own. Order Service
+        // answers 403 for it, so PAY2 must not confirm whether that payment exists.
+        stubOrderNotOwned(orderId);
+        mockMvc.perform(get("/api/v1/payments/order/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + token("USR-BUYER-INTRUDER", "CUSTOMER")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("Forbidden"));
     }
 
     @Test
