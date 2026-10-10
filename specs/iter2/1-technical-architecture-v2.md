@@ -66,7 +66,7 @@ The project is structured as a multi-module repository:
 - A fixed subset is translated 1:1 into Kafka integration events by the Infrastructure layer and published through the Spring Cloud Stream Kafka binder (one topic per event type, JSON payload). The full catalog, topics, and consumers are in `6-cqrs-command-query.md` §8:
   `OrderPlaced → OrderCreatedEvent`, `OrderCancelled → OrderCancelledEvent`, `PaymentSucceeded → PaymentConfirmedEvent`, `PaymentFailed → PaymentFailedEvent`, `RefundProcessed → RefundProcessedEvent`.
 - All Kafka consumers are idempotent on the event's business key.
-- The "real-time inventory alert" stream job (I4) is a Spring Cloud Stream function inside Inventory Service that evaluates every `StockItemAggregate` event against the global low-stock threshold.
+- The "real-time inventory alert" projection (I4) is a Kafka Streams topology inside Inventory Service: it consumes Inventory's own `stock.changed` stream (see `6-cqrs-command-query.md` §8), reduces it to the latest available quantity per product, and applies the global low-stock threshold to maintain the `LowStockAlert` lifecycle.
 
 ## Event Sourcing Scope
 - Only `StockItemAggregate` (Inventory Service) is event-sourced; every other aggregate is CRUD via Spring Data JPA. See `5-event-sourcing.md`.

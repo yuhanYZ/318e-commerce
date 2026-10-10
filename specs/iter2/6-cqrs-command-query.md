@@ -53,7 +53,8 @@ This document defines how the 318 E-Commerce Platform applies CQRS, including:
 ### 4.2 Read Model (Projections)
 - `inventory_read_model`: driven by `StockItemAggregate` events. Used by the I1 query.
 - `order_analytics_window` (Order Service): one-minute tumbling buckets (`orderCount`, `totalRevenue`) derived from `OrderPlaced`, maintained by a Spring Cloud Stream one-minute tumbling-window aggregation over `order.created`. Used by the O6 query. See `3-domain-models-order-service-ddd.md` §2.6.
-- All other queries (U3a, P1-P3, O2, O3, I4, PAY2, PAY4, AI4) read directly from their own service's CRUD entity store — there is no separate projection for CRUD aggregates.
+- `low_stock_alert` (Inventory Service): the open/resolve alert lifecycle, maintained by the I4 Kafka Streams topology over `stock.changed`. Used by the I4 query. See `3-domain-models-inventory-service-ddd.md` §2.3.2.
+- All other queries (U3a, P1-P3, O2, O3, PAY2, PAY4, AI4) read directly from their own service's CRUD entity store — there is no separate projection for those CRUD aggregates.
 
 ---
 
@@ -134,7 +135,7 @@ Command responses return the mutated resource's current representation, or outco
 | `ViewOrderHistoryQuery(userId)` | O3 | Order CRUD store | Strong (local DB) | |
 | `GetRealtimeOrderAnalyticsQuery(windowMinutes)` | O6 | `order_analytics_window` | Eventual (bounded) | Projected from the `order.created` stream via a Spring Cloud Stream one-minute tumbling-window function (analogous to `5-event-sourcing.md` §3.5's inventory read model). Admin only. Default `windowMinutes` is `app.analytics.window-minutes` (15) |
 | `CheckStockAvailabilityQuery(productId)` | I1 | `inventory_read_model` | Eventual (bounded) | Projected from the `StockItemAggregate` event stream; updated in the same transaction as the event append in this iteration (see `5-event-sourcing.md` §3.5). Returns 404 for an untracked `productId` |
-| `ListLowStockAlertsQuery` | I4 | LowStockAlert CRUD store | Strong (local DB) | `LowStockAlertAggregate` is CRUD, not projected from events |
+| `ListLowStockAlertsQuery` | I4 | LowStockAlert CRUD store | Eventual (bounded) | `LowStockAlert` remains a CRUD aggregate, but its open/resolve lifecycle is now maintained by the I4 Kafka Streams topology over `stock.changed` (see §8), so a read can briefly lag the latest stock event |
 | `ViewPaymentStatusQuery(orderId)` | PAY2 | Payment CRUD store | Strong (local DB) | |
 | `ViewPaymentHistoryQuery` | PAY4 | Payment + Refund CRUD store | Strong (local DB) | |
 | `ListConversationSessionsQuery` | AI4 | ConversationSession CRUD store | Strong (local DB) | |
@@ -148,12 +149,20 @@ Domain events are internal to a service. The subset below is translated 1:1 into
 
 | Kafka Event | Topic | Publisher (Domain Event) | Consumer(s) → Command | Payload |
 | :--- | :--- | :--- | :--- | :--- |
-| `OrderCreatedEvent` | `order.created` | Order (`OrderPlaced`) | Inventory → `DeductStockOnOrderCreatedCommand` | `orderId`, `userId`, `items[{productId, quantity}]`, `occurredAt` |
+| `OrderCreatedEvent` | `order.created` | Order (`OrderPlaced`) | Inventory → `DeductStockOnOrderCreatedCommand`; Order → O6 analytics topology (Kafka Streams, one-minute tumbling window) | `orderId`, `userId`, `items[{productId, quantity}]`, `totalAmount`, `occurredAt` |
 | `OrderCancelledEvent` | `order.cancelled` | Order (`OrderCancelled`) | Inventory → `ReleaseStockOnOrderCancelledCommand` | `orderId`, `items[{productId, quantity}]`, `occurredAt` |
 | `PaymentConfirmedEvent` | `payment.confirmed` | Payment (`PaymentSucceeded`) | Order → `UpdateOrderOnPaymentEventCommand` | `paymentId`, `orderId`, `occurredAt` |
 | `PaymentFailedEvent` | `payment.failed` | Payment (`PaymentFailed`) | Order → `UpdateOrderOnPaymentEventCommand`; Inventory → `ReleaseStockOnOrderCancelledCommand` | `paymentId`, `orderId`, `occurredAt` |
 | `RefundProcessedEvent` | `payment.refunded` | Payment (`RefundProcessed`) | *(none in this iteration)* | `refundId`, `paymentId`, `orderId`, `occurredAt` |
+| `StockChangedEvent` | `stock.changed` | Inventory (`StockAdjusted` / `StockDeducted` / `StockReleased`) | Inventory → I4 low-stock-alert topology (Kafka Streams) | `productId`, `eventType`, `quantity` or `delta`, `occurredAt` |
 
-All consumers are idempotent on the event's business key (`orderId` [+ `productId`]). The Iteration 1 (archived) `StockUpdatedEvent` and `StockReservationFailedEvent` are **not** part of this catalog.
+All consumers are idempotent: the command-dispatch consumers on the event's business key (`orderId` [+ `productId`]), and the two read-model topologies (O6, I4) by writing the complete aggregate value for a window/product rather than accumulating, so replaying an event recomputes the same row instead of double-counting. The Iteration 1 (archived) `StockUpdatedEvent` and `StockReservationFailedEvent` are **not** part of this catalog.
 
-The O6 projection consumes the existing `order.created` stream; no additional Kafka topic is introduced.
+The O6 analytics projection and the I4 low-stock-alert projection are Kafka Streams topologies: they
+consume `order.created` and `stock.changed` respectively and sink their result into a read-model
+table, so no *integration* topic is added for their output. Note that `stock.changed` is an
+Inventory-to-Inventory topic — Inventory Service republishes its own append-only stock events
+(`5-event-sourcing.md` §3.3) and consumes them back as a stream, exactly as Order Service both
+publishes and consumes `order.created`. Kafka Streams additionally manages its own internal
+repartition/changelog topics and a local state directory; those are framework implementation
+details, not entries in this catalog.
