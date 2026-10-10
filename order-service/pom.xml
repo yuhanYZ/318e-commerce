@@ -86,9 +86,22 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-stream-binder-kafka</artifactId>
         </dependency>
+        <!-- O6 — the real-time order analytics projection is a Kafka Streams windowed aggregation
+             (specs/iter2/3-domain-models-order-service-ddd.md §2.6.1). This is Spring Cloud Stream's
+             own Kafka Streams binder, i.e. the mandated Spring Cloud Stream dependency rather than a
+             third-party streaming engine. Active only under the "kafka" profile. -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-stream-binder-kafka-streams</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams-test-utils</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

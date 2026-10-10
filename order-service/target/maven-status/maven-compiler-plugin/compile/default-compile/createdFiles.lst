@@ -4,6 +4,7 @@ com\ecommerce\orderservice\domain\UserId.class
 com\ecommerce\orderservice\dto\ProductView.class
 com\ecommerce\orderservice\domain\OrderAnalyticsWindow.class
 com\ecommerce\orderservice\integration\OrderCreatedEvent.class
+com\ecommerce\orderservice\analytics\OrderAnalyticsTopologyConfig.class
 com\ecommerce\orderservice\service\DomainEventPublisher.class
 com\ecommerce\orderservice\domain\OrderPaid.class
 com\ecommerce\orderservice\config\RestTemplateConfig.class
@@ -21,6 +22,7 @@ com\ecommerce\orderservice\domain\DomainEvent.class
 com\ecommerce\orderservice\domain\OrderAnalyticsService.class
 com\ecommerce\orderservice\domain\ProductId$JpaConverter.class
 com\ecommerce\orderservice\domain\OrderStatus.class
+com\ecommerce\orderservice\analytics\OrderAnalyticsBucketSink.class
 com\ecommerce\orderservice\service\OrderCommandService.class
 com\ecommerce\orderservice\dto\MoneyDto.class
 com\ecommerce\orderservice\domain\OrderPlaced.class
@@ -38,12 +40,14 @@ com\ecommerce\orderservice\service\OrderMapper.class
 com\ecommerce\orderservice\dto\CreateOrderItemRequest.class
 com\ecommerce\orderservice\domain\Order.class
 com\ecommerce\orderservice\config\SecurityConfig.class
+com\ecommerce\orderservice\analytics\OrderAnalyticsBucketWriter.class
 com\ecommerce\orderservice\dto\OrderAnalyticsResponse.class
 com\ecommerce\orderservice\integration\OrderItemPayload.class
 com\ecommerce\orderservice\exception\GlobalExceptionHandler.class
 com\ecommerce\orderservice\dto\OrderPageResponse.class
 com\ecommerce\orderservice\dto\OrderResponse.class
 com\ecommerce\orderservice\domain\OrderPaymentFailed.class
+com\ecommerce\orderservice\analytics\OrderAnalyticsBucket.class
 com\ecommerce\orderservice\domain\OrderAnalyticsSummary.class
 com\ecommerce\orderservice\domain\Quantity$JpaConverter.class
 com\ecommerce\orderservice\service\OrderAnalyticsProjectionService.class

@@ -54,6 +54,17 @@ public class OrderAnalyticsWindow {
         this.updatedAt = updatedAt;
     }
 
+    /**
+     * Stream-path write: replaces the row with the complete aggregate the Kafka Streams topology
+     * computed for this window. Unlike {@link #increment}, this is idempotent — replaying the same
+     * window rewrites the same value rather than adding to it.
+     */
+    public void replace(long orderCount, Money totalRevenue, Instant updatedAt) {
+        this.orderCount = orderCount;
+        this.totalRevenue = totalRevenue;
+        this.updatedAt = updatedAt;
+    }
+
     public Instant getWindowStart() {
         return windowStart;
     }

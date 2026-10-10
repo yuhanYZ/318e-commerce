@@ -159,7 +159,8 @@ public class OrderCommandService {
                 .map(item -> new OrderItemPayload(item.getProductId().value(), item.getQuantity().value()))
                 .toList();
         streamBridge.send("order.created",
-                new OrderCreatedEvent(order.getId().value(), order.getUserId().value(), items, Instant.now()));
+                new OrderCreatedEvent(order.getId().value(), order.getUserId().value(), items,
+                        order.getTotalAmount(), Instant.now()));
     }
 
     private void publishOrderCancelled(Order order) {
