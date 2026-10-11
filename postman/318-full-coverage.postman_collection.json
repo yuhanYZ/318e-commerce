@@ -1,0 +1,2278 @@
+{
+  "info": {
+    "name": "318 E-Commerce - Full Manual Coverage (core flow + uncovered endpoints + negative/permission + failure branches)",
+    "description": "A superset of 318-ecommerce-e2e: covers U1-U5 / P1-P4 / O1-O6 / I1-I4 / PAY1-PAY4 / AI1-AI4, plus the 400/401/403/404/409/423 negative paths, the payment.failed branch and the low-stock alert open/resolve lifecycle.\n\nPreconditions: all six services running, and order-service / inventory-Service / payment-service must run with the kafka profile (otherwise the steps marked [KAFKA] fail).\n\nHow to run: Run the whole collection in folder order 0 -> 6 (or Send request by request). Every {{...}} is a collection variable, so no Environment is needed.\n\nTwo places need a human:\n1) resetToken in folder 5: the password-reset token is never returned over the API - open http://localhost:8081/h2-console (jdbc:h2:mem:userservicedb, user sa, empty password), run SELECT * FROM password_reset_token, paste the value into the collection variable resetToken and re-send 5.3.\n2) folder 6 needs a real OPENAI_API_KEY, otherwise 6.1 fails (it is tolerated and will not be reported as a failure).\n\nRepeatability: every run generates a new runTag which is embedded in product names and emails, so a full re-run never hits 409; stock, orders and payments do accumulate, though. Restart the services first if you want completely clean numbers.\n\nRe-running a single folder breaks the ordering dependencies (e.g. folder 2 asserts stock 48 which depends on folder 1 having just run), so always run the whole collection.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "userBase", "value": "http://localhost:8081/api/v1" },
+    { "key": "productBase", "value": "http://localhost:8082/api/v1" },
+    { "key": "orderBase", "value": "http://localhost:8083/api/v1" },
+    { "key": "inventoryBase", "value": "http://localhost:8084/api/v1" },
+    { "key": "paymentBase", "value": "http://localhost:8085/api/v1" },
+    { "key": "aiBase", "value": "http://localhost:8086/api/v1" },
+    { "key": "adminEmail", "value": "admin@318ecommerce.local" },
+    { "key": "adminPassword", "value": "ChangeMe123!" },
+    { "key": "adminToken", "value": "" },
+    { "key": "runTag", "value": "" },
+    { "key": "productId", "value": "" },
+    { "key": "productName", "value": "" },
+    { "key": "customerEmail", "value": "" },
+    { "key": "customerId", "value": "" },
+    { "key": "customerToken", "value": "" },
+    { "key": "orderId", "value": "" },
+    { "key": "orderAmount", "value": "" },
+    { "key": "paymentId", "value": "" },
+    { "key": "order2Id", "value": "" },
+    { "key": "order2Amount", "value": "" },
+    { "key": "payment2Id", "value": "" },
+    { "key": "userBEmail", "value": "" },
+    { "key": "userBToken", "value": "" },
+    { "key": "pendingOrderId", "value": "" },
+    { "key": "stockBeforeCancel", "value": "" },
+    { "key": "failProductId", "value": "" },
+    { "key": "failOrderId", "value": "" },
+    { "key": "failPaymentId", "value": "" },
+    { "key": "deadProductId", "value": "" },
+    { "key": "analyticsCountBefore", "value": "" },
+    { "key": "analyticsRevenueBefore", "value": "" },
+    { "key": "deltaToFour", "value": "" },
+    { "key": "aiSessionId", "value": "" },
+    { "key": "aiChatOk", "value": "" },
+    { "key": "resetToken", "value": "" },
+    { "key": "throwawayEmail", "value": "" },
+    { "key": "throwawayToken", "value": "" },
+    { "key": "lockEmail", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "0. Setup",
+      "item": [
+        {
+          "name": "0.1 Health check on product-service (public) and generate this run runTag",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('runTag', String(Date.now()).slice(-6));",
+                  "console.log('this run runTag = ' + pm.collectionVariables.get('runTag'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('product-service reachable and P1 is public', function () { pm.response.to.have.status(200); });",
+                  "pm.test('paging shape is content/page/totalElements', function () { var j = pm.response.json(); pm.expect(j).to.have.property('content'); pm.expect(j).to.have.property('totalElements'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{productBase}}/products?page=0&size=1",
+            "description": "Fix the environment first if the service is down - everything downstream fails in a cascade."
+          }
+        }
+      ]
+    },
+    {
+      "name": "0.2 Script self-test: is pm.sendRequest usable inside a test script",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "var url = pm.variables.replaceIn('{{productBase}}/products?page=0&size=1');",
+              "console.log('self-test URL = ' + url);",
+              "pm.sendRequest({ url: url, method: 'GET' }, function (err, res) {",
+              "  console.log('self-test result: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 160));",
+              "  var ok = false;",
+              "  try { ok = !!res.json().content; } catch (e1) { try { ok = !!JSON.parse(res.body).content; } catch (e2) { ok = false; } }",
+              "  pm.test('pm.sendRequest works inside a test script (prerequisite for every [KAFKA] poll)', function () { pm.expect(ok).to.be.true; });",
+              "});"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{productBase}}/products?page=0&size=1",
+        "description": "Issues the same request a second time from inside a test script. If this fails, the current Postman sandbox cannot issue scripted requests and all 10 [KAFKA] polling steps will fail too; the console prints err/code/bodyType/body so you can tell which."
+      }
+    },
+    {
+      "name": "1. Core flow (U1/U2/P1/P4/I1/I3/O1/O2/O4/PAY1-PAY4)",
+      "item": [
+        {
+          "name": "1.1 Login as Admin (U2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('U2 admin login 200', function () { pm.response.to.have.status(200); });",
+                  "var j = pm.response.json();",
+                  "pm.test('returns token and userId', function () { pm.expect(j.token).to.be.a('string'); pm.expect(j.userId).to.be.a('string'); });",
+                  "pm.collectionVariables.set('adminToken', j.token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{adminEmail}}\",\"password\":\"{{adminPassword}}\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "1.2 O6 snapshot (before placing orders, windowMinutes=1440)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('O6 snapshot 200 (Admin permission)', function () { pm.response.to.have.status(200); });",
+                  "var a = pm.response.json();",
+                  "pm.collectionVariables.set('analyticsCountBefore', a.orderCount);",
+                  "pm.collectionVariables.set('analyticsRevenueBefore', a.totalRevenue.amount);",
+                  "console.log('O6 before orders: orderCount=' + a.orderCount + ' revenue=' + a.totalRevenue.amount);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{orderBase}}/orders/analytics/realtime?windowMinutes=1440",
+            "description": "A 1440-minute window so no old bucket can slide out between the before/after snapshots; the +2 orders / +60.00 delta assertion then holds no matter what history exists."
+          }
+        },
+        {
+          "name": "1.3 Create a product (P4, Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('P4 create product 201', function () { pm.response.to.have.status(201); });",
+                  "var p = pm.response.json();",
+                  "pm.test('new product defaults to ACTIVE and echoes its price', function () { pm.expect(p.status).to.eql('ACTIVE'); pm.expect(p.price.amount).to.eql(20.00); pm.expect(p.price.currency).to.eql('AUD'); });",
+                  "pm.collectionVariables.set('productId', p.id);",
+                  "pm.collectionVariables.set('productName', p.name);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"E2E Widget {{runTag}}\",\"description\":\"full-coverage run {{runTag}}\",\"price\":{\"amount\":20.00,\"currency\":\"AUD\"},\"imageUrl\":\"https://example.com/w.jpg\",\"categoryId\":\"CAT-TEST\"}" },
+            "url": "{{productBase}}/products"
+          }
+        },
+        {
+          "name": "1.4 Add stock +50 (I3, Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('I3 adjust stock 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('new product stock is 50', function () { pm.expect(pm.response.json().quantityAvailable).to.eql(50); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"delta\":50,\"reason\":\"Initial stock\"}" },
+            "url": "{{inventoryBase}}/inventory/{{productId}}/adjust"
+          }
+        },
+        {
+          "name": "1.5 Check stock (I1, no auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('I1 unauthenticated query 200', function () { pm.response.to.have.status(200); });",
+                  "var s = pm.response.json();",
+                  "pm.test('quantityAvailable=50 and isAvailable=true', function () { pm.expect(s.quantityAvailable).to.eql(50); pm.expect(s.isAvailable).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{productId}}" }
+        },
+        {
+          "name": "1.6 Register a customer (U1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('U1 register 201', function () { pm.response.to.have.status(201); });",
+                  "var u = pm.response.json();",
+                  "pm.test('register returns the CUSTOMER role', function () { pm.expect(u.role).to.eql('CUSTOMER'); });",
+                  "pm.collectionVariables.set('customerId', u.id);",
+                  "pm.collectionVariables.set('customerEmail', 'e2e.customer.' + pm.collectionVariables.get('runTag') + '@example.com');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"e2e.customer.{{runTag}}@example.com\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/register"
+          }
+        },
+        {
+          "name": "1.7 Login as customer (U2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('U2 customer login 200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('customerToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{customerEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "1.8 Browse products (P1, no auth)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('P1 list 200', function () { pm.response.to.have.status(200); });",
+                  "var pid = pm.collectionVariables.get('productId');",
+                  "pm.test('list contains the product just created', function () { pm.expect(pm.response.json().content.some(function (p) { return p.id === pid; })).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products?page=0&size=100" }
+        },
+        {
+          "name": "1.9 Place an order for 2 units (O1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('O1 place order 201', function () { pm.response.to.have.status(201); });",
+                  "var o = pm.response.json();",
+                  "pm.test('order is PENDING with total 40.00 AUD', function () { pm.expect(o.status).to.eql('PENDING'); pm.expect(o.totalAmount.amount).to.eql(40.00); pm.expect(o.totalAmount.currency).to.eql('AUD'); });",
+                  "pm.test('unit price comes from the product-service snapshot', function () { pm.expect(o.items[0].unitPrice.amount).to.eql(20.00); });",
+                  "pm.collectionVariables.set('orderId', o.id);",
+                  "pm.collectionVariables.set('orderAmount', JSON.stringify(o.totalAmount));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{productId}}\",\"quantity\":2}]}" },
+            "url": "{{orderBase}}/orders"
+          }
+        },
+        {
+          "name": "1.10 [KAFKA] Wait for stock to drop to 48 (order.created -> inventory)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var expected = 48;",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/{{productId}}'), method: 'GET' }, function (err, res) {",
+                  "    var q = null; try { q = res.json().quantityAvailable; } catch (e1) { try { q = JSON.parse(res.body).quantityAvailable; } catch (e2) { q = null; } }",
+                  "    if (q === expected) { pm.test('I2 event deducted stock to ' + expected, function () { pm.expect(q).to.eql(expected); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('I2 event deducted stock to ' + expected, function () { throw new Error('not changed within 8s to ' + expected + ' (current ' + q + '): check that inventory-Service runs with the kafka profile and that consumer group inventory-service consumed order.created'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{productId}}" },
+          "description": "Polls immediately, then retries every 350ms for roughly 9 seconds."
+        },
+        {
+          "name": "1.11 Pay for the order (PAY1)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PAY1 payment 201', function () { pm.response.to.have.status(201); });",
+                  "var p = pm.response.json();",
+                  "pm.test('amount 40.00 takes the success branch', function () { pm.expect(p.status).to.eql('SUCCESS'); pm.expect(p.amount.amount).to.eql(40.00); });",
+                  "pm.collectionVariables.set('paymentId', p.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{orderId}}\",\"amount\":{{orderAmount}}}" },
+            "url": "{{paymentBase}}/payments"
+          }
+        },
+        {
+          "name": "1.12 [KAFKA] Wait for the order to become PAID (payment.confirmed -> order)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{orderBase}}/orders/{{orderId}}'), method: 'GET', header: { Authorization: 'Bearer ' + pm.collectionVariables.get('customerToken') } }, function (err, res) {",
+                  "    var st = null; try { st = res.json().status; } catch (e1) { try { st = JSON.parse(res.body).status; } catch (e2) { st = null; } }",
+                  "    if (st === 'PAID') { pm.test('O5 order advanced to PAID by the event', function () { pm.expect(st).to.eql('PAID'); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('O5 order advanced to PAID by the event', function () { throw new Error('not PAID within 8s (current ' + st + '): check the kafka profile of order-service and consumer group order-service'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "1.13 Look up payment by order (PAY2 + ownership)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PAY2 200', function () { pm.response.to.have.status(200); });",
+                  "var p = pm.response.json();",
+                  "pm.test('payment maps one-to-one to the order', function () { pm.expect(p.orderId).to.eql(pm.collectionVariables.get('orderId')); pm.expect(p.id).to.eql(pm.collectionVariables.get('paymentId')); pm.expect(p.status).to.eql('SUCCESS'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{paymentBase}}/payments/order/{{orderId}}"
+          }
+        },
+        {
+          "name": "1.14 Admin transaction list (PAY4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PAY4 200（Admin）', function () { pm.response.to.have.status(200); });",
+                  "var j = pm.response.json();",
+                  "var pid = pm.collectionVariables.get('paymentId');",
+                  "pm.test('transaction list contains this run payment', function () { pm.expect(j.content.some(function (p) { return p.id === pid; })).to.be.true; });",
+                  "pm.test('response also carries the refund slice', function () { pm.expect(j.refunds).to.be.an('array'); pm.expect(j).to.have.property('totalRefundElements'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{paymentBase}}/payments?page=0&size=100"
+          }
+        },
+        {
+          "name": "1.15 Second order, 1 unit (for cancel/refund)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('second order 201 PENDING', function () { pm.response.to.have.status(201); });",
+                  "var o = pm.response.json();",
+                  "pm.test('total 20.00', function () { pm.expect(o.totalAmount.amount).to.eql(20.00); });",
+                  "pm.collectionVariables.set('order2Id', o.id);",
+                  "pm.collectionVariables.set('order2Amount', JSON.stringify(o.totalAmount));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{productId}}\",\"quantity\":1}]}" },
+            "url": "{{orderBase}}/orders"
+          }
+        },
+        {
+          "name": "1.16 Pay for the second order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('second payment 201 SUCCESS', function () { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('SUCCESS'); });",
+                  "pm.collectionVariables.set('payment2Id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{order2Id}}\",\"amount\":{{order2Amount}}}" },
+            "url": "{{paymentBase}}/payments"
+          }
+        },
+        {
+          "name": "1.17 [KAFKA] Wait for PAID then cancel the order (O4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var tries = 0;",
+                  "function tryCancel() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{orderBase}}/orders/{{order2Id}}'), method: 'GET', header: { Authorization: 'Bearer ' + pm.collectionVariables.get('customerToken') } }, function (err, res) {",
+                  "    var st = null; try { st = res.json().status; } catch (e1) { try { st = JSON.parse(res.body).status; } catch (e2) { st = null; } }",
+                  "    if (st !== 'PAID') {",
+                  "      if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('O4 cancel order', function () { throw new Error('order did not become PAID within 8s (current ' + st + '): first confirm that payment.confirmed from 1.16 was consumed by order-service'); }); return; }",
+                  "      setTimeout(tryCancel, 350); return;",
+                  "    }",
+                  "    pm.sendRequest({ url: pm.variables.replaceIn('{{orderBase}}/orders/{{order2Id}}/cancel'), method: 'POST', header: { Authorization: 'Bearer ' + pm.collectionVariables.get('customerToken') } }, function (err2, res2) {",
+                  "      var body = {}; try { body = res2.json(); } catch (e1) { try { body = JSON.parse(res2.body); } catch (e2) { body = {}; } }",
+                  "      pm.test('O4 cancel 200 with status CANCELLED', function () { pm.expect(res2.code).to.eql(200); pm.expect(body.status).to.eql('CANCELLED'); });",
+                  "    });",
+                  "  });",
+                  "}",
+                  "tryCancel();"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }], "url": "{{orderBase}}/orders/{{order2Id}}" },
+          "description": "Polls until PAID and then issues the cancel automatically (O4 allows cancelling PENDING/PAID only)."
+        },
+        {
+          "name": "1.18 [KAFKA] Wait for stock to return to 48 after cancel (order.cancelled -> inventory)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var expected = 48;",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/{{productId}}'), method: 'GET' }, function (err, res) {",
+                  "    var q = null; try { q = res.json().quantityAvailable; } catch (e1) { try { q = JSON.parse(res.body).quantityAvailable; } catch (e2) { q = null; } }",
+                  "    if (q === expected) { pm.test('I5 cancel released stock back to ' + expected, function () { pm.expect(q).to.eql(expected); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('I5 cancel released stock back to ' + expected, function () { throw new Error('not back to ' + expected + ' (current ' + q + '): check that consumer group inventory-service consumes order.cancelled'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{productId}}" }
+        },
+        {
+          "name": "1.19 Refund (PAY3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('PAY3 refund 201', function () { pm.response.to.have.status(201); });",
+                  "var r = pm.response.json();",
+                  "pm.test('full refund equal to the original payment', function () { pm.expect(r.paymentId).to.eql(pm.collectionVariables.get('payment2Id')); pm.expect(r.amount.amount).to.eql(20.00); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"Customer requested cancellation\"}" },
+            "url": "{{paymentBase}}/payments/{{payment2Id}}/refund"
+          }
+        },
+        {
+          "name": "1.20 O6 snapshot (after orders: +2 orders / +60.00 / AOV consistent)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var beforeCount = Number(pm.collectionVariables.get('analyticsCountBefore'));",
+                  "var beforeRev = Number(pm.collectionVariables.get('analyticsRevenueBefore'));",
+                  "var url = pm.variables.replaceIn('{{orderBase}}/orders/analytics/realtime?windowMinutes=1440');",
+                  "var token = pm.collectionVariables.get('adminToken');",
+                  "var tries = 0;",
+                  "function readJson(res) { try { return res.json(); } catch (e1) { try { return JSON.parse(res.body); } catch (e2) { return null; } } }",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, function (err, res) {",
+                  "    var a = readJson(res);",
+                  "    if (!a) {",
+                  "      if (++tries > 160) { pm.test('O6 snapshot readable', function () { throw new Error('cannot read the O6 response: err=' + err + ' body=' + String(res && res.body).slice(0, 140)); }); return; }",
+                  "      setTimeout(poll, 400); return;",
+                  "    }",
+                  "    var dc = Number(a.orderCount) - beforeCount;",
+                  "    var dr = Number(a.totalRevenue.amount) - beforeRev;",
+                  "    if (tries === 0) { console.log('O6 first reading: orderCount=' + a.orderCount + ', revenue=' + a.totalRevenue.amount + ' => delta ' + dc + ' orders / ' + dr); }",
+                  "    if (dc === 2 && Math.abs(dr - 60) < 0.01) {",
+                  "      pm.test('O6 eventually consistent: +2 orders in the window', function () { pm.expect(dc).to.eql(2); });",
+                  "      pm.test('O6 eventually consistent: +60.00 revenue in the window', function () { pm.expect(Math.abs(dr - 60)).to.be.below(0.01); });",
+                  "      pm.test('averageOrderValue = totalRevenue / orderCount (HALF_UP, 2 dp)', function () { var exp = Math.round((Number(a.totalRevenue.amount) / Number(a.orderCount)) * 100) / 100; pm.expect(Math.abs(Number(a.averageOrderValue.amount) - exp)).to.be.below(0.01); });",
+                  "      return;",
+                  "    }",
+                  "    if (++tries > 160) {",
+                  "      pm.test('O6 eventually consistent (+2 orders / +60.00)', function () { throw new Error('did not converge within 10s; last delta=' + dc + ' orders / ' + dr + '. Under the kafka profile O6 is maintained only by the Kafka Streams topology (OrderAnalyticsProjectionService returns early when app.kafka.enabled=true), and the window aggregate is only emitted after the state-store cache/commit cycle (default commit interval 30s), so readings can stay unchanged or too low for tens of seconds after an order. Use docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics to confirm LAG is 0.'); });",
+                  "      return;",
+                  "    }",
+                  "    setTimeout(poll, 400);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{orderBase}}/orders/analytics/realtime?windowMinutes=1440"
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Uncovered queries and commands (P2/P3/O3/O6 param validation/U3/I1 404)",
+      "item": [
+        {
+          "name": "2.1 Product detail with live stock (P2 -> inventory)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('P2 200', function () { pm.response.to.have.status(200); });",
+                  "var d = pm.response.json();",
+                  "pm.test('detail stock comes from inventory-service (48)', function () { pm.expect(d.stockAvailable).to.eql(48); pm.expect(d.isInStock).to.be.true; });",
+                  "pm.test('detail carries status/categoryId', function () { pm.expect(d.status).to.eql('ACTIVE'); pm.expect(d.categoryId).to.eql('CAT-TEST'); });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products/{{productId}}" }
+        },
+        {
+          "name": "2.2 Product not found (P2 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 + ResourceNotFound', function () { pm.response.to.have.status(404); pm.expect(pm.response.json().code).to.eql('ResourceNotFound'); });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products/PRD-NOPE-{{runTag}}" }
+        },
+        {
+          "name": "2.3 Category filter (P1 categoryId)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('P1 category filter 200', function () { pm.response.to.have.status(200); });",
+                  "pm.test('every returned item belongs to that category', function () { pm.expect(pm.response.json().content.every(function (p) { return p.categoryId === 'CAT-TEST'; })).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products?categoryId=CAT-TEST&page=0&size=50" }
+        },
+        {
+          "name": "2.4 Keyword search hit (P3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('P3 200 and returns an array', function () { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array'); });",
+                  "var pid = pm.collectionVariables.get('productId');",
+                  "pm.test('search result contains this run product', function () { pm.expect(pm.response.json().some(function (p) { return p.id === pid; })).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products/search?q={{runTag}}" }
+        },
+        {
+          "name": "2.5 Keyword search with no hit (empty array, not an error)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('no hit returns 200 with an empty array', function () { pm.response.to.have.status(200); pm.expect(pm.response.json()).to.be.an('array').that.is.empty; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products/search?q=zzz{{runTag}}" }
+        },
+        {
+          "name": "2.6 My profile (U3a)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('U3a 200', function () { pm.response.to.have.status(200); });",
+                  "var me = pm.response.json();",
+                  "pm.test('identity comes from the JWT: role=CUSTOMER / status=ACTIVE', function () { pm.expect(me.role).to.eql('CUSTOMER'); pm.expect(me.status).to.eql('ACTIVE'); });",
+                  "pm.test('a freshly registered user has no name/address/phone yet', function () { pm.expect(me.name).to.be.null; pm.expect(me.address).to.be.null; pm.expect(me.phone).to.be.null; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{userBase}}/users/me"
+          }
+        },
+        {
+          "name": "2.7 Update profile (U3b, all fields)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('U3b 200 and the fields take effect', function () { pm.response.to.have.status(200); });",
+                  "var me = pm.response.json();",
+                  "pm.test('name/address/phone updated', function () { pm.expect(me.name).to.eql('Yuhan'); pm.expect(me.address).to.eql('Sydney'); pm.expect(me.phone).to.eql('0400000000'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"Yuhan\",\"address\":\"Sydney\",\"phone\":\"0400000000\"}" },
+            "url": "{{userBase}}/users/me"
+          }
+        },
+        {
+          "name": "2.8 Partial update (U3b, name only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('U3b partial update 200', function () { pm.response.to.have.status(200); });",
+                  "var me = pm.response.json();",
+                  "var expectedName = 'Renamed ' + pm.collectionVariables.get('runTag');",
+                  "pm.test('only name changes, other fields stay (partial update)', function () { pm.expect(me.name).to.eql(expectedName); pm.expect(me.address).to.eql('Sydney'); pm.expect(me.phone).to.eql('0400000000'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"Renamed {{runTag}}\"}" },
+            "url": "{{userBase}}/users/me"
+          }
+        },
+        {
+          "name": "2.9 Profile persisted (U3a re-read)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('re-read still shows the new name (really persisted)', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().name).to.eql('Renamed ' + pm.collectionVariables.get('runTag')); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{userBase}}/users/me"
+          }
+        },
+        {
+          "name": "2.10 My order list (O3)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('O3 200', function () { pm.response.to.have.status(200); });",
+                  "var j = pm.response.json();",
+                  "var uid = pm.collectionVariables.get('customerId');",
+                  "pm.test('contains at least this run two orders', function () { pm.expect(Number(j.totalElements)).to.be.at.least(2); });",
+                  "pm.test('returns only the caller own orders', function () { pm.expect(j.content.every(function (o) { return o.userId === uid; })).to.be.true; });",
+                  "pm.test('sorted by createdAt descending', function () { var c = j.content; if (c.length < 2) { return; } pm.expect(c[0].createdAt >= c[1].createdAt).to.be.true; });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders?page=0&size=20"
+          }
+        },
+        {
+          "name": "2.11 Analytics with an invalid param (O6 windowMinutes=0 -> 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 + ValidationFailed (window must be 1..1440)', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql('ValidationFailed'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{orderBase}}/orders/analytics/realtime?windowMinutes=0"
+          }
+        },
+        {
+          "name": "2.12 Stock of an untracked product (I1 404, not 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 + ResourceNotFound', function () { pm.response.to.have.status(404); pm.expect(pm.response.json().code).to.eql('ResourceNotFound'); });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/PRD-NOPE-{{runTag}}" }
+        }
+      ]
+    },
+    {
+      "name": "3. Failure branch and low-stock alerts (.99 payment failure / I4 open-resolve lifecycle)",
+      "item": [
+        {
+          "name": "3.1 Create a 9.99 product (triggers the mock failure hook)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('create product 201 with price 9.99', function () { pm.response.to.have.status(201); pm.expect(pm.response.json().price.amount).to.eql(9.99); });",
+                  "pm.collectionVariables.set('failProductId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"Fail Widget {{runTag}}\",\"description\":\"mock gateway failure path\",\"price\":{\"amount\":9.99,\"currency\":\"AUD\"},\"imageUrl\":\"https://example.com/f.jpg\",\"categoryId\":\"CAT-TEST\"}" },
+            "url": "{{productBase}}/products"
+          }
+        },
+        {
+          "name": "3.2 Give it 10 units of stock",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('stock is 10', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().quantityAvailable).to.eql(10); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"delta\":10,\"reason\":\"failure-path stock\"}" },
+            "url": "{{inventoryBase}}/inventory/{{failProductId}}/adjust"
+          }
+        },
+        {
+          "name": "3.3 Place an order for 1 unit (total 9.99)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 with total 9.99', function () { pm.response.to.have.status(201); pm.expect(pm.response.json().totalAmount.amount).to.eql(9.99); });",
+                  "pm.collectionVariables.set('failOrderId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{failProductId}}\",\"quantity\":1}]}" },
+            "url": "{{orderBase}}/orders"
+          }
+        },
+        {
+          "name": "3.4 [KAFKA] Wait for stock to drop to 9",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var expected = 9;",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/{{failProductId}}'), method: 'GET' }, function (err, res) {",
+                  "    var q = null; try { q = res.json().quantityAvailable; } catch (e1) { try { q = JSON.parse(res.body).quantityAvailable; } catch (e2) { q = null; } }",
+                  "    if (q === expected) { pm.test('stock deducted to ' + expected, function () { pm.expect(q).to.eql(expected); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('stock deducted to ' + expected, function () { throw new Error('not changed within 8s to ' + expected + ' (current ' + q + '）'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{failProductId}}" }
+        },
+        {
+          "name": "3.5 Pay 9.99 (the mock gateway always fails)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 but status=FAILED', function () { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('FAILED'); });",
+                  "pm.collectionVariables.set('failPaymentId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{failOrderId}}\",\"amount\":{\"amount\":9.99,\"currency\":\"AUD\"}}" },
+            "url": "{{paymentBase}}/payments"
+          }
+        },
+        {
+          "name": "3.6 [KAFKA] Wait for the order to become PAYMENT_FAILED (payment.failed -> order)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{orderBase}}/orders/{{failOrderId}}'), method: 'GET', header: { Authorization: 'Bearer ' + pm.collectionVariables.get('customerToken') } }, function (err, res) {",
+                  "    var st = null; try { st = res.json().status; } catch (e1) { try { st = JSON.parse(res.body).status; } catch (e2) { st = null; } }",
+                  "    if (st === 'PAYMENT_FAILED') { pm.test('O5 order advanced to PAYMENT_FAILED by payment.failed', function () { pm.expect(st).to.eql('PAYMENT_FAILED'); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('O5 order becomes PAYMENT_FAILED', function () { throw new Error('not PAYMENT_FAILED within 8s (current ' + st + '): check consumer group order-service'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders/{{failOrderId}}"
+          }
+        },
+        {
+          "name": "3.7 [KAFKA] Wait for stock to be released back to 10 (payment.failed -> inventory)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var expected = 10;",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/{{failProductId}}'), method: 'GET' }, function (err, res) {",
+                  "    var q = null; try { q = res.json().quantityAvailable; } catch (e1) { try { q = JSON.parse(res.body).quantityAvailable; } catch (e2) { q = null; } }",
+                  "    if (q === expected) { pm.test('after a failed payment stock is back to ' + expected, function () { pm.expect(q).to.eql(expected); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('after a failed payment stock is back to ' + expected, function () { throw new Error('not back to ' + expected + ' (current ' + q + '): check that consumer group inventory-service consumes payment.failed'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{failProductId}}" }
+        },
+        {
+          "name": "3.8 Read current stock and compute the delta needed to reach 4",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('read stock 200', function () { pm.response.to.have.status(200); });",
+                  "var q = pm.response.json().quantityAvailable;",
+                  "pm.collectionVariables.set('deltaToFour', String(4 - q));",
+                  "console.log('current stock ' + q + ', sending delta=' + (4 - q) + ' to reach 4');"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{productId}}" },
+          "description": "Uses a relative delta instead of a hardcoded one so re-runs stay correct. The threshold is 5 and the rule is quantity < 5, so stock has to go down to 4."
+        },
+        {
+          "name": "3.9 Drive stock down to 4 (I3, Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('stock after adjustment is 4', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().quantityAvailable).to.eql(4); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"delta\":{{deltaToFour}},\"reason\":\"drive below low-stock threshold\"}" },
+            "url": "{{inventoryBase}}/inventory/{{productId}}/adjust"
+          }
+        },
+        {
+          "name": "3.10 [KAFKA] Wait for the low-stock alert to open (I4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var pid = pm.collectionVariables.get('productId');",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/alerts'), method: 'GET', header: { Authorization: 'Bearer ' + pm.collectionVariables.get('adminToken') } }, function (err, res) {",
+                  "    var arr = []; try { arr = res.json(); } catch (e1) { try { arr = JSON.parse(res.body); } catch (e2) { arr = []; } }",
+                  "    var hit = arr.filter(function (a) { return a.stockItemId === pid; })[0];",
+                  "    if (hit) { pm.test('I4 alert is open and unresolved', function () { pm.expect(hit.resolvedAt).to.be.null; pm.expect(hit.triggeredAt).to.be.a('string'); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 170) { pm.test('I4 alert opened', function () { throw new Error('no alert for this product within 60s. I4 is maintained by a Kafka Streams topology: first check whether the consumer group exists - docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list. If inventory-alerts is missing, the I4 topology is not running at all and no alert will ever be produced; if it exists, this is just the topology commit delay (30s by default) and re-sending the request later is enough'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{inventoryBase}}/inventory/alerts"
+          }
+        },
+        {
+          "name": "3.11 Restock +50 (back to 54)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('stock after adjustment is 54', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().quantityAvailable).to.eql(54); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"delta\":50,\"reason\":\"restock above threshold\"}" },
+            "url": "{{inventoryBase}}/inventory/{{productId}}/adjust"
+          }
+        },
+        {
+          "name": "3.12 [KAFKA] Wait for the alert to auto-resolve (I4)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var pid = pm.collectionVariables.get('productId');",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/alerts'), method: 'GET', header: { Authorization: 'Bearer ' + pm.collectionVariables.get('adminToken') } }, function (err, res) {",
+                  "    var arr = []; try { arr = res.json(); } catch (e1) { try { arr = JSON.parse(res.body); } catch (e2) { arr = []; } }",
+                  "    var stillOpen = arr.some(function (a) { return a.stockItemId === pid; });",
+                  "    if (!stillOpen) { pm.test('I4 alert is gone from the active list after restock (resolved)', function () { pm.expect(stillOpen).to.be.false; }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 170) { pm.test('I4 alert auto-closed', function () { throw new Error('alert is still open after 60s: again check whether the consumer group inventory-alerts exists (missing = the I4 topology is not running)'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{inventoryBase}}/inventory/alerts"
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Negative and permission cases (400/401/403/404/409)",
+      "item": [
+        {
+          "name": "4.1 Protected endpoint without a token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + Unauthorized', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('Unauthorized'); });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{orderBase}}/orders/{{orderId}}" }
+        },
+        {
+          "name": "4.2 Garbage token -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + Unauthorized (signature check failed)', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('Unauthorized'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer not-a-real-jwt" }],
+            "url": "{{orderBase}}/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "4.3 Customer tries to create a product -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden (ADMIN required)', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"should not exist {{runTag}}\",\"price\":{\"amount\":1.00,\"currency\":\"AUD\"},\"categoryId\":\"CAT-X\"}" },
+            "url": "{{productBase}}/products"
+          }
+        },
+        {
+          "name": "4.4 Customer tries to adjust stock -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"delta\":1,\"reason\":\"should be denied\"}" },
+            "url": "{{inventoryBase}}/inventory/{{productId}}/adjust"
+          }
+        },
+        {
+          "name": "4.5 Customer reads low-stock alerts -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{inventoryBase}}/inventory/alerts"
+          }
+        },
+        {
+          "name": "4.6 Customer reads all transactions -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{paymentBase}}/payments?page=0&size=10"
+          }
+        },
+        {
+          "name": "4.7 Customer reads real-time analytics -> 403",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders/analytics/realtime?windowMinutes=15"
+          }
+        },
+        {
+          "name": "4.8 Register the same email twice -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + EmailAlreadyExists', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('EmailAlreadyExists'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{customerEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/register"
+          }
+        },
+        {
+          "name": "4.9 Register with a weak password -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 + ValidationFailed', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql('ValidationFailed'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"weak.{{runTag}}@example.com\",\"password\":\"123\"}" },
+            "url": "{{userBase}}/users/register"
+          }
+        },
+        {
+          "name": "4.10 Malformed JSON -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 + ValidationFailed（Malformed request body）', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql('ValidationFailed'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{oops" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "4.11 Order not found -> 404",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('404 + ResourceNotFound', function () { pm.response.to.have.status(404); pm.expect(pm.response.json().code).to.eql('ResourceNotFound'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders/ORD-NOPE-{{runTag}}"
+          }
+        },
+        {
+          "name": "4.12 Cancel an already-cancelled order -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + OrderStateViolation', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('OrderStateViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders/{{order2Id}}/cancel"
+          }
+        },
+        {
+          "name": "4.13 Pay an already-paid order -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + PaymentStateViolation (not PENDING)', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('PaymentStateViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{orderId}}\",\"amount\":{{orderAmount}}}" },
+            "url": "{{paymentBase}}/payments"
+          }
+        },
+        {
+          "name": "4.14a Create a pending order (for the amount-mismatch case)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201 PENDING', function () { pm.response.to.have.status(201); pm.expect(pm.response.json().status).to.eql('PENDING'); });",
+                  "pm.collectionVariables.set('pendingOrderId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{productId}}\",\"quantity\":1}]}" },
+            "url": "{{orderBase}}/orders"
+          }
+        },
+        {
+          "name": "4.14b Payment amount does not match the order -> 400",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 + ValidationFailed (amount must equal the order total)', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql('ValidationFailed'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"orderId\":\"{{pendingOrderId}}\",\"amount\":{\"amount\":1.00,\"currency\":\"AUD\"}}" },
+            "url": "{{paymentBase}}/payments"
+          }
+        },
+        {
+          "name": "4.14c Read stock (baseline before cancel)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('read stock 200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('stockBeforeCancel', String(pm.response.json().quantityAvailable));"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{productId}}" }
+        },
+        {
+          "name": "4.14d Cancel a PENDING order (O4 allows PENDING/PAID)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 + CANCELLED', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('CANCELLED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{orderBase}}/orders/{{pendingOrderId}}/cancel"
+          }
+        },
+        {
+          "name": "4.14e [KAFKA] Wait for stock to be released +1 after cancelling a PENDING order",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "var expected = Number(pm.collectionVariables.get('stockBeforeCancel')) + 1;",
+                  "var tries = 0;",
+                  "function poll() {",
+                  "  pm.sendRequest({ url: pm.variables.replaceIn('{{inventoryBase}}/inventory/{{productId}}'), method: 'GET' }, function (err, res) {",
+                  "    var q = null; try { q = res.json().quantityAvailable; } catch (e1) { try { q = JSON.parse(res.body).quantityAvailable; } catch (e2) { q = null; } }",
+                  "    if (q === expected) { pm.test('stock after cancel ' + expected + ' (an unpaid order releases stock too)', function () { pm.expect(q).to.eql(expected); }); return; }",
+                  "    if (tries === 1) { console.log('poll self-test: err=' + err + ' code=' + (res && res.code) + ' bodyType=' + typeof (res && res.body) + ' body=' + String(res && res.body).slice(0, 140)); }",
+                  "    if (++tries > 25) { pm.test('stock released after cancel', function () { throw new Error('not reached within 8s: ' + expected + ' (current ' + q + '）'); }); return; }",
+                  "    setTimeout(poll, 350);",
+                  "  });",
+                  "}",
+                  "poll();"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{inventoryBase}}/inventory/{{productId}}" }
+        },
+        {
+          "name": "4.15 Drive stock negative -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + StockInvariantViolation', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('StockInvariantViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"delta\":-99999,\"reason\":\"invariant probe\"}" },
+            "url": "{{inventoryBase}}/inventory/{{productId}}/adjust"
+          }
+        },
+        {
+          "name": "4.16 Refund a FAILED payment -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + PaymentStateViolation (only SUCCESS can be refunded)', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('PaymentStateViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"refund a failed payment\"}" },
+            "url": "{{paymentBase}}/payments/{{failPaymentId}}/refund"
+          }
+        },
+        {
+          "name": "4.17 Refund an already-refunded payment -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + PaymentStateViolation (an active refund already exists)', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('PaymentStateViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"double refund\"}" },
+            "url": "{{paymentBase}}/payments/{{payment2Id}}/refund"
+          }
+        },
+        {
+          "name": "4.18 Refund while the order is not cancelled -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + PaymentStateViolation (a refund requires a CANCELLED order)', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('PaymentStateViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"reason\":\"order still PAID\"}" },
+            "url": "{{paymentBase}}/payments/{{paymentId}}/refund"
+          }
+        },
+        {
+          "name": "4.19 Register user B (cross-user access checks)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('userBEmail', 'e2e.userb.' + pm.collectionVariables.get('runTag') + '@example.com');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"e2e.userb.{{runTag}}@example.com\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/register"
+          }
+        },
+        {
+          "name": "4.20 Login as user B",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('userBToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{userBEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "4.21 User B reads A order -> 403 (ownership)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden (the order does not belong to B)', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{userBToken}}" }],
+            "url": "{{orderBase}}/orders/{{orderId}}"
+          }
+        },
+        {
+          "name": "4.22 User B reads A payment -> 403 (decided by order-service via the forwarded token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{userBToken}}" }],
+            "url": "{{paymentBase}}/payments/order/{{orderId}}"
+          }
+        },
+        {
+          "name": "4.23 Create a product to deactivate (P4 deactivate)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('deadProductId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"Dead Widget {{runTag}}\",\"description\":\"to be deactivated\",\"price\":{\"amount\":5.00,\"currency\":\"AUD\"},\"imageUrl\":\"https://example.com/d.jpg\",\"categoryId\":\"CAT-TEST\"}" },
+            "url": "{{productBase}}/products"
+          }
+        },
+        {
+          "name": "4.24 Deactivate the product (P4 PATCH deactivate)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with status=INACTIVE', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('INACTIVE'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{productBase}}/products/{{deadProductId}}/deactivate"
+          }
+        },
+        {
+          "name": "4.25 Detail of a deactivated product: stock reported as 0 (P2 contract for an inventory 404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 with status=INACTIVE', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('INACTIVE'); });",
+                  "pm.test('reports 0 / false when inventory has no record instead of failing the whole request', function () { var d = pm.response.json(); pm.expect(d.stockAvailable).to.eql(0); pm.expect(d.isInStock).to.be.false; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products/{{deadProductId}}" }
+        },
+        {
+          "name": "4.26 Update a deactivated product -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + ProductStateViolation (INACTIVE is terminal)', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('ProductStateViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"name\":\"Try to rename {{runTag}}\"}" },
+            "url": "{{productBase}}/products/{{deadProductId}}"
+          }
+        },
+        {
+          "name": "4.27 Deactivated product is gone from browsing (P1 lists ACTIVE only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () { pm.response.to.have.status(200); });",
+                  "var dead = pm.collectionVariables.get('deadProductId');",
+                  "pm.test('list does not contain the deactivated product', function () { pm.expect(pm.response.json().content.some(function (p) { return p.id === dead; })).to.be.false; });"
+                ]
+              }
+            }
+          ],
+          "request": { "method": "GET", "header": [], "url": "{{productBase}}/products?page=0&size=100" }
+        },
+        {
+          "name": "4.28 Order a deactivated product -> 409",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 + StockInvariantViolation (INACTIVE counts as unavailable)', function () { pm.response.to.have.status(409); pm.expect(pm.response.json().code).to.eql('StockInvariantViolation'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"items\":[{\"productId\":\"{{deadProductId}}\",\"quantity\":1}]}" },
+            "url": "{{orderBase}}/orders"
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Account lifecycle (U4 password reset / U5 deactivate / U2 lockout)",
+      "item": [
+        {
+          "name": "5.1 Request password reset (U4, existing email -> 202)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 Accepted with an empty body', function () { pm.response.to.have.status(202); pm.expect(pm.response.text()).to.eql(''); });",
+                  "console.log('manual step required: open http://localhost:8081/h2-console (JDBC: jdbc:h2:mem:userservicedb, user: sa, empty password), run SELECT * FROM password_reset_token, copy the TOKEN of the newly created row into the collection variable resetToken, then send 5.3');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{customerEmail}}\"}" },
+            "url": "{{userBase}}/users/password-reset/request"
+          }
+        },
+        {
+          "name": "5.2 Request password reset (unknown email -> also 202, no enumeration)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('202 (the status code must not reveal whether the email exists)', function () { pm.response.to.have.status(202); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"nobody.{{runTag}}@example.com\"}" },
+            "url": "{{userBase}}/users/password-reset/request"
+          }
+        },
+        {
+          "name": "5.3 Confirm the reset (resetToken must be filled in manually)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('resetToken')) { console.log('skipping 5.3: resetToken is empty - fetch the token from the H2 console and re-send this request'); return; }",
+                  "pm.test('200 reset succeeded', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"token\":\"{{resetToken}}\",\"newPassword\":\"NewPass123!\"}" },
+            "url": "{{userBase}}/users/password-reset/confirm"
+          }
+        },
+        {
+          "name": "5.4 Replay the same token -> 400 (single use)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('resetToken')) { console.log('skipping 5.4: resetToken is empty'); return; }",
+                  "pm.test('400 + ResetTokenInvalidOrExpired', function () { pm.response.to.have.status(400); pm.expect(pm.response.json().code).to.eql('ResetTokenInvalidOrExpired'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"token\":\"{{resetToken}}\",\"newPassword\":\"Another123!\"}" },
+            "url": "{{userBase}}/users/password-reset/confirm"
+          }
+        },
+        {
+          "name": "5.5 Login with the new password -> 200",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('resetToken')) { console.log('skipping 5.5: 5.3 did not run'); return; }",
+                  "pm.test('the new password works', function () { pm.response.to.have.status(200); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{customerEmail}}\",\"password\":\"NewPass123!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.6 Login with the old password -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('resetToken')) { console.log('skipping 5.6: 5.3 did not run'); return; }",
+                  "pm.test('401 + InvalidCredentials (the old password no longer works)', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{customerEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.7 Register a throwaway account for the deactivation test (U5)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('throwawayEmail', 'e2e.throwaway.' + pm.collectionVariables.get('runTag') + '@example.com');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"e2e.throwaway.{{runTag}}@example.com\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/register"
+          }
+        },
+        {
+          "name": "5.8 Login with the throwaway account",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200', function () { pm.response.to.have.status(200); });",
+                  "pm.collectionVariables.set('throwawayToken', pm.response.json().token);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{throwawayEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.9 Deactivate the account (U5 -> 204)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('204 No Content', function () { pm.response.to.have.status(204); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{throwawayToken}}" }],
+            "url": "{{userBase}}/users/me"
+          }
+        },
+        {
+          "name": "5.10 Login after deactivation -> 401 (soft delete is terminal)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + InvalidCredentials', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{throwawayEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.11 Deactivated account with the old token -> 200 but status=DEACTIVATED (JWT is not revoked)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('200 (the signature is still valid)', function () { pm.response.to.have.status(200); });",
+                  "pm.test('profile status is DEACTIVATED', function () { pm.expect(pm.response.json().status).to.eql('DEACTIVATED'); });",
+                  "console.log('Note: each service only verifies the signature locally and never re-checks account status, so deactivation does not invalidate already-issued JWTs - a known trade-off of this iteration and worth stating in the report.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{throwawayToken}}" }],
+            "url": "{{userBase}}/users/me"
+          }
+        },
+        {
+          "name": "5.12 Register an account for the lockout test (U2 policy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('201', function () { pm.response.to.have.status(201); });",
+                  "pm.collectionVariables.set('lockEmail', 'e2e.lock.' + pm.collectionVariables.get('runTag') + '@example.com');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"e2e.lock.{{runTag}}@example.com\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/register"
+          }
+        },
+        {
+          "name": "5.13 Wrong password, attempt 1 -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + InvalidCredentials', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{lockEmail}}\",\"password\":\"WrongPassword1\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.14 Wrong password, attempt 2 -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + InvalidCredentials', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{lockEmail}}\",\"password\":\"WrongPassword2\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.15 Wrong password, attempt 3 -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + InvalidCredentials', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{lockEmail}}\",\"password\":\"WrongPassword3\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.16 Wrong password, attempt 4 -> 401",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + InvalidCredentials', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{lockEmail}}\",\"password\":\"WrongPassword4\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.17 Wrong password, attempt 5 -> 401 (the account is LOCKED at this point)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('401 + InvalidCredentials (attempt 5 still returns 401)', function () { pm.response.to.have.status(401); pm.expect(pm.response.json().code).to.eql('InvalidCredentials'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{lockEmail}}\",\"password\":\"WrongPassword5\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        },
+        {
+          "name": "5.18 Login attempt 6 (even with the right password) -> 423, locked for 10 minutes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('423 + AccountLocked (blocked even with the right password)', function () { pm.response.to.have.status(423); pm.expect(pm.response.json().code).to.eql('AccountLocked'); });",
+                  "console.log('This account stays locked for 10 minutes and only a user-service restart clears it; the test runs last so it cannot pollute other accounts.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"email\":\"{{lockEmail}}\",\"password\":\"Passw0rd!\"}" },
+            "url": "{{userBase}}/users/login"
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. AI customer service (optional; 6.1 needs a real OPENAI_API_KEY)",
+      "item": [
+        {
+          "name": "6.1 Send a message (AI1/AI2, creates the session on first use)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get('aiSessionId')) {",
+                  "  var id = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = Math.random() * 16 | 0; var v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); });",
+                  "  pm.collectionVariables.set('aiSessionId', id);",
+                  "  console.log('this run AI session id = ' + id);",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 500 || pm.response.code === 401) {",
+                  "  pm.collectionVariables.set('aiChatOk', 'no');",
+                  "  console.log('skipping the AI assertions: got 500/401. Note that ai-customer-service disguises downstream failures as 401 - an LLM exception triggers Spring forwarding to /error, and that internal dispatch carries no identity (JwtAuthenticationFilter is a OncePerRequestFilter and skips ERROR dispatches), so the security chain answers 401. A 401 therefore does not mean the token is wrong; the real cause is in that service console stack trace. Common ones: the process never saw OPENAI_API_KEY (the log says 'Your api key: z is invalid'), or OPENAI_MODEL is not a valid model name.');",
+                  "} else {",
+                  "  pm.collectionVariables.set('aiChatOk', 'yes');",
+                  "  pm.test('AI1 200 with a customer-service reply', function () { pm.response.to.have.status(200); var m = pm.response.json(); pm.expect(m.sender).to.eql('AI'); pm.expect(m.content).to.be.a('string').and.not.empty; });",
+                  "  pm.test('session id matches the request', function () { pm.expect(pm.response.json().sessionId).to.eql(pm.collectionVariables.get('aiSessionId')); });",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"content\":\"What products do you have?\"}" },
+            "url": "{{aiBase}}/ai-chat/sessions/{{aiSessionId}}/messages"
+          }
+        },
+        {
+          "name": "6.2 Session list (AI4, Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('AI4 200 with the correct paging shape', function () { pm.response.to.have.status(200); var j = pm.response.json(); pm.expect(j.content).to.be.an('array'); pm.expect(j).to.have.property('totalElements'); });",
+                  "if (pm.collectionVariables.get('aiChatOk') === 'yes') {",
+                  "  pm.test('list contains this run session', function () { var sid = pm.collectionVariables.get('aiSessionId'); pm.expect(pm.response.json().content.some(function (s) { return s.sessionId === sid || s.id === sid; })).to.be.true; });",
+                  "} else { console.log('skipping the session-content assertion: 6.1 did not create a session'); }"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{aiBase}}/ai-chat/sessions?page=0&size=50"
+          }
+        },
+        {
+          "name": "6.3 Session message log (AI4, Admin)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get('aiChatOk') !== 'yes') { console.log('skipping 6.3: 6.1 did not create a session'); return; }",
+                  "pm.test('200 and returns the message array (USER + AI)', function () { pm.response.to.have.status(200); var m = pm.response.json(); pm.expect(m).to.be.an('array'); pm.expect(m.length).to.be.at.least(2); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{adminToken}}" }],
+            "url": "{{aiBase}}/ai-chat/sessions/{{aiSessionId}}/messages"
+          }
+        },
+        {
+          "name": "6.4 Escalate to a human (AI3 -> ESCALATED)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get('aiChatOk') !== 'yes') { console.log('skipping 6.4: session not created'); return; }",
+                  "pm.test('200 with status ESCALATED', function () { pm.response.to.have.status(200); pm.expect(pm.response.json().status).to.eql('ESCALATED'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{aiBase}}/ai-chat/sessions/{{aiSessionId}}/escalate"
+          }
+        },
+        {
+          "name": "6.5 Customer reads the session list -> 403 (AI4 is Admin-only)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('403 + Forbidden', function () { pm.response.to.have.status(403); pm.expect(pm.response.json().code).to.eql('Forbidden'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [{ "key": "Authorization", "value": "Bearer {{customerToken}}" }],
+            "url": "{{aiBase}}/ai-chat/sessions?page=0&size=10"
+          }
+        },
+        {
+          "name": "6.6 User B uses A sessionId -> 404 (does not leak session existence)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.collectionVariables.get('aiChatOk') !== 'yes') { console.log('skipping 6.6: needs an existing session owned by someone else and none was created'); return; }",
+                  "pm.test('404 + ResourceNotFound (not 403, to avoid leaking existence)', function () { pm.response.to.have.status(404); pm.expect(pm.response.json().code).to.eql('ResourceNotFound'); });"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }, { "key": "Authorization", "value": "Bearer {{userBToken}}" }],
+            "body": { "mode": "raw", "raw": "{\"content\":\"hijack attempt\"}" },
+            "url": "{{aiBase}}/ai-chat/sessions/{{aiSessionId}}/messages"
+          }
+        }
+      ]
+    }
+  ]
+}
