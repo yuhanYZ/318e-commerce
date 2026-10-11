@@ -205,6 +205,15 @@ A reproducible fingerprint: that 401 carries a **numeric** `timestamp` (`1791702
 
 Two-line fix: allow `/error` and ERROR dispatches in `SecurityConfig` (`.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()` and `.requestMatchers("/error").permitAll()`), and add an `@ExceptionHandler` for the LLM exceptions that returns 502/500 with the provider's message. Without it, every model failure looks like "invalid token", which cost several rounds of debugging here.
 
+**Status: fixed** on branch `fix/ai-error-masking` (code + two regression tests). Verified against a real container, not just mocks:
+
+| Scenario | Before (measured) | After (measured) |
+| :--- | :--- | :--- |
+| `POST /api/v1/ai-chat/nope` (unmatched path) | `401` | `404` |
+| Real model call with an invalid API key | `401 Missing or invalid authentication token` | `502` `{"code":"ModelCallFailed","message":"Upstream model call failed (HTTP 401): ... Your api key: z is invalid ..."}` |
+
+Regression tests added: `AiCustomerServiceModelFailureTests` asserts the 502 mapping (with the provider message) and that a failed model call leaves no partially created session behind, per the invariant documented in `ConversationCommandService`.
+
 Root cause of this run, from the service console: `dev.ai4j.openai4j.OpenAiHttpException: {"error":{"message":"Authentication Fails, Your api key: z is invalid"...}}` - the running process was still using the default placeholder key `z`, because `OPENAI_API_KEY` was not present in the process environment (the model bean is built once at startup, so the service must be restarted after setting it).
 
 **Status after the fix:** with `OPENAI_API_KEY` added to the run configuration and the service restarted, `POST .../messages` returns `200` and both tools are demonstrably grounded - asking about `PRD-DB9A672D` returned `20.00 AUD` and the live stock `48` (both matching the real values), and asking with the order owner's token about `ORD-D08E9549` returned `PENDING` / `20.00 AUD`, while asking about the same order with a different user's token returns "not found" (the tool forwards the caller's token, so order-service ownership still applies).
@@ -226,5 +235,5 @@ Root cause of this run, from the service console: `dev.ai4j.openai4j.OpenAiHttpE
 | 5.11 | A deactivated account can still read its own profile with the old JWT (each service verifies only the signature) - a deliberate trade-off of this iteration |
 | 5.18 | The lockout takes effect on the *next* login: attempt 5 still returns 401, attempt 6 returns 423 |
 | 4.21 / 4.22 / 6.6 | Cross-user isolation: orders and payments answer 403, AI sessions answer 404 to avoid leaking existence |
-| AI service 401 masking | Any model failure is reported as "invalid token", which hides the real cause; the rewrite above is the minimal fix |
+| AI service 401 masking | Any model failure was reported as "invalid token", hiding the real cause; **fixed** on `fix/ai-error-masking` (see the before/after measurements above) |
 | I4 topology missing | The alert feature cannot work at all while consumer group `inventory-alerts` does not exist - the strongest defect found by this test suite |

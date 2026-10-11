@@ -4,6 +4,7 @@ import com.ecommerce.aicustomerservice.security.JwtAuthenticationFilter;
 import com.ecommerce.aicustomerservice.security.JwtService;
 import com.ecommerce.aicustomerservice.security.RestAccessDeniedHandler;
 import com.ecommerce.aicustomerservice.security.RestAuthenticationEntryPoint;
+import jakarta.servlet.DispatcherType;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -19,6 +20,13 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
  * authentication — ownership of a session is a service-layer check (404, never 403, to avoid
  * leaking session existence — see the user-stories doc's Session Lifecycle note), not something a
  * static Security path rule can express.
+ *
+ * <p><b>ERROR dispatch.</b> {@code /error} and the {@code ERROR} dispatcher type are permitted on
+ * purpose. Without those rules any unhandled exception (a failing model call, for instance) is
+ * forwarded to {@code /error}, that internal dispatch is evaluated by this chain as an anonymous
+ * request — {@link JwtAuthenticationFilter} extends {@code OncePerRequestFilter} and does not run
+ * on ERROR dispatches — and the entry point answers 401. Every model failure then looked like a bad
+ * token. Model failures are mapped explicitly in {@code exception.GlobalExceptionHandler}.
  */
 @Configuration
 public class SecurityConfig {
@@ -43,6 +51,8 @@ public class SecurityConfig {
                         .authenticationEntryPoint(authenticationEntryPoint)
                         .accessDeniedHandler(accessDeniedHandler))
                 .authorizeHttpRequests(auth -> auth
+                        .dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/ai-chat/sessions").hasRole("ADMIN")
                         .requestMatchers(HttpMethod.GET, "/api/v1/ai-chat/sessions/*/messages").hasRole("ADMIN")
                         .anyRequest().authenticated())
