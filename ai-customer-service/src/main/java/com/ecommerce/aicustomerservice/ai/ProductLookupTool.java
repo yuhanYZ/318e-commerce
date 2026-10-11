@@ -10,16 +10,17 @@ import org.springframework.web.client.RestTemplate;
 /**
  * AI1's "grounded data" tool for product questions. Calls Product Service's public
  * {@code GET /products/{id}} (no auth required — see product-service's SecurityConfig), so it
- * needs no bearer token.
+ * needs no bearer token and can be a singleton.
  *
- * Order-lookup grounding (also called for in the user stories doc, for AI1's order questions and
- * AI2's return/exchange eligibility) is intentionally NOT wired up as a tool here: Order Service's
- * {@code GET /orders/{id}} requires the caller's own bearer token for its ownership check, but the
- * {@link com.ecommerce.aicustomerservice.ChatAgent} interface's signature is fixed by the Phase 3
- * test seam to {@code reply(sessionId, userMessage)} — no token parameter. Since no contract test
- * exercises order-grounded answers (the whole ChatAgent is stubbed out in tests), this is a
- * documented simplification rather than an oversight; product lookups, which need no token, are
- * still genuinely wired through LangChain4j tool-calling.
+ * Order-lookup grounding is a separate tool, {@code OrderLookupTool}: Order Service's
+ * {@code GET /orders/{id}} enforces ownership, so that tool has to carry the caller's bearer token
+ * and is therefore built per call in {@code ai.ChatAgentConfig} from the token the
+ * {@link com.ecommerce.aicustomerservice.ChatAgent} port receives
+ * ({@code reply(sessionId, userMessage, bearerToken)}). That keeps the agent unable to read another
+ * customer's orders even though it can look up any product. Verified end to end against a real
+ * model: a product question is answered with the live price and stock, a question about the caller's
+ * own order with its real status, and the same order question asked with another user's token with
+ * "not found".
  */
 @Component
 public class ProductLookupTool {
