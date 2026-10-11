@@ -2,6 +2,13 @@
 # build produce diff noise - compiled classes, copied application.yml and surefire reports.
 target/
 
+# IDE settings
+.idea/
+.vscode/
+
+# Frontend
+node_modules/
+
 # JVM crash dumps / Kafka Streams leftovers
 hs_err_pid*.log
 replay_pid*.log
