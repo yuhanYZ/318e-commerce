@@ -14,7 +14,10 @@ CSCI318 capstone: an event-driven e-commerce backend built as six Spring Boot mi
 | `ai-customer-service` | 8086 | LangChain4j chat agent (DeepSeek/OpenAI-compatible) with product/order tools |
 
 - Java 21, Spring Boot 3.3.x, Spring Cloud Stream (Kafka binder), H2 in-memory DB per service (database-per-service)
-- Auth: JWT (HS256) with a secret shared across all services; each service validates tokens locally
+- Auth: JWT (HS512) with a secret shared across all services; each service validates tokens locally
+  (the issuer derives the HMAC algorithm from the secret length — the 69-byte dev default selects
+  HS512, while `1-technical-architecture-v2.md` still says HS256; giving all six services a 32-byte
+  `JWT_SECRET` selects HS256)
 - Async flows over Kafka: `order.created` / `order.cancelled` → Inventory; `payment.confirmed` / `payment.failed` → Order (and Inventory)
 - Design docs: [`specs/iter2/`](specs/iter2) (architecture, user stories, DDD domain models, API list, event sourcing, CQRS). API contract: [`specs/iter2/openapi-contract-v2.yaml`](specs/iter2/openapi-contract-v2.yaml)
 - Iteration 1 specs are kept in [`specs/iter1/`](specs/iter1) as an archived historical record — superseded by `specs/iter2/`, not the current design of record.
@@ -63,8 +66,16 @@ node scripts/e2e-walkthrough.mjs
 
 The same flow is available as a Postman collection: import [`postman/318-ecommerce-e2e.postman_collection.json`](postman/318-ecommerce-e2e.postman_collection.json) and run it with the Collection Runner. Tokens and IDs are chained via collection variables, so no Environment is needed. Re-import the file after any change to it — Postman does not sync with disk.
 
+### Full-coverage manual suite
+
+[`postman/318-full-coverage.postman_collection.json`](postman/318-full-coverage.postman_collection.json) exercises all 34 iteration-2 requirements (U1–U5, P1–P4, O1–O6, I1–I4, PAY1–PAY4, AI1–AI4) in 102 requests / 147 assertions, including the negative paths (400/401/403/404/409/423), the `.99` payment-failure branch, the I4 alert open/resolve lifecycle and cross-user isolation. The expected result for every step, the run order, and the findings from the recorded runs are in [`postman/318-full-coverage-expected-results.md`](postman/318-full-coverage-expected-results.md).
+
+Two steps need input from you: folder 5 needs `resetToken` (read it from the H2 console — the API never returns it) and folder 6 needs a real `OPENAI_API_KEY` in the `ai-customer-service` run configuration. Both are explained in the companion markdown. Run the collection **whole** rather than folder-by-folder: later steps depend on the ids and stock levels created by folder 1.
+
 ## Gotchas
 
 - **Mock payment failure hook:** `payment-service` deterministically fails any payment whose amount has a fractional part of exactly `.99` (`app.payment.mock-failure-fraction`). Avoid `x.99` totals in tests unless you want to exercise the failure path.
 - All data is in-memory H2; restarting a service resets its data (the Admin account is re-seeded on startup).
 - Order ownership is enforced per user, so even the Admin cannot read a customer's order by ID.
+- **Start Kafka before the services.** `order-service`, `inventory-Service` and `payment-service` must reach the broker while booting — wait for `docker ps` to report `318-kafka` as `healthy` first.
+- **Kafka Streams state directories.** Stopping a service from the IDE kills the JVM, so the I4 alert topology never closes its state store cleanly; on the next start it can fail silently — no `inventory-alerts` consumer group, no alerts, no HTTP error. If that happens, delete `%TEMP%\inventory-alerts-state` (override with `INVENTORY_ALERTS_STATE_DIR`) and start the service again; the state is rebuilt from the changelog topic.
