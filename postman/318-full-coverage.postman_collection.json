@@ -585,7 +585,7 @@
                   "      return;",
                   "    }",
                   "    if (++tries > 160) {",
-                  "      pm.test('O6 eventually consistent (+2 orders / +60.00)', function () { throw new Error('did not converge within 10s; last delta=' + dc + ' orders / ' + dr + '. Under the kafka profile O6 is maintained only by the Kafka Streams topology (OrderAnalyticsProjectionService returns early when app.kafka.enabled=true), and the window aggregate is only emitted after the state-store cache/commit cycle (default commit interval 30s), so readings can stay unchanged or too low for tens of seconds after an order. Use docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics to confirm LAG is 0.'); });",
+                  "      pm.test('O6 eventually consistent (+2 orders / +60.00)', function () { throw new Error('did not converge within about 60s; last delta=' + dc + ' orders / ' + dr + '. Under the kafka profile O6 is maintained only by the Kafka Streams topology (OrderAnalyticsProjectionService returns early when app.kafka.enabled=true), and the window aggregate is only emitted after the state-store cache/commit cycle (default commit interval 30s), so readings can stay unchanged or too low for tens of seconds after an order. If it never converges, check that the topology is actually running: docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics should report an active member with LAG 0 - a stale local state directory makes it fail silently (see the README gotchas).'); });",
                   "      return;",
                   "    }",
                   "    setTimeout(poll, 400);",
@@ -2153,7 +2153,7 @@
                 "exec": [
                   "if (pm.response.code === 500 || pm.response.code === 401) {",
                   "  pm.collectionVariables.set('aiChatOk', 'no');",
-                  "  console.log('skipping the AI assertions: got 500/401. Note that ai-customer-service disguises downstream failures as 401 - an LLM exception triggers Spring forwarding to /error, and that internal dispatch carries no identity (JwtAuthenticationFilter is a OncePerRequestFilter and skips ERROR dispatches), so the security chain answers 401. A 401 therefore does not mean the token is wrong; the real cause is in that service console stack trace. Common ones: the process never saw OPENAI_API_KEY (the log says 'Your api key: z is invalid'), or OPENAI_MODEL is not a valid model name.');",
+                  "  console.log('skipping the AI assertions: got 500/401. Note that ai-customer-service disguises downstream failures as 401 - an LLM exception triggers Spring forwarding to /error, and that internal dispatch carries no identity (JwtAuthenticationFilter is a OncePerRequestFilter and skips ERROR dispatches), so the security chain answers 401. A 401 therefore does not mean the token is wrong; the real cause is in that service console stack trace. Common ones: the process never saw OPENAI_API_KEY, or OPENAI_MODEL is not a valid model name. The service log then prints a line such as: Your api key: z is invalid');",
                   "} else {",
                   "  pm.collectionVariables.set('aiChatOk', 'yes');",
                   "  pm.test('AI1 200 with a customer-service reply', function () { pm.response.to.have.status(200); var m = pm.response.json(); pm.expect(m.sender).to.eql('AI'); pm.expect(m.content).to.be.a('string').and.not.empty; });",

@@ -15,7 +15,8 @@
 #   docker compose up -d        # start Kafka + kafka-ui in the background
 #   docker compose ps           # check both are healthy
 #   docker compose logs -f kafka  # watch broker logs
-#   docker compose down         # stop everything (add -v to also wipe topics)
+#   docker compose down         # stop everything (topics survive in the named volume below;
+#                               # add -v to wipe them as well)
 #
 # Requires Docker Desktop installed and running. After `docker compose up -d`,
 # start the five services with the "kafka" Spring profile active (e.g. IntelliJ
@@ -42,6 +43,13 @@ services:
     container_name: 318-kafka
     ports:
       - "9092:9092"
+    volumes:
+      # Named volume so topics, offsets and (therefore) the Kafka Streams changelog topics
+      # survive `docker compose down` and container recreation. Without it, every container
+      # recreation wipes the broker while the services still hold local RocksDB state
+      # directories from the previous broker generation, and both stream-processing
+      # topologies (O6 analytics, I4 alerts) then fail to start - see the README gotchas.
+      - kafka-data:/var/lib/kafka/data
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -74,3 +82,9 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+
+volumes:
+  # Broker state (topics, offsets, Kafka Streams changelog topics). Keeping it across
+  # `docker compose down` avoids forcing both stream topologies to rebuild from scratch;
+  # `docker compose down -v` deliberately wipes it.
+  kafka-data:
