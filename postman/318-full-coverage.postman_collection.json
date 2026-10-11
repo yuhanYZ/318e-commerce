@@ -585,7 +585,7 @@
                   "      return;",
                   "    }",
                   "    if (++tries > 160) {",
-                  "      pm.test('O6 eventually consistent (+2 orders / +60.00)', function () { throw new Error('did not converge within 10s; last delta=' + dc + ' orders / ' + dr + '. Under the kafka profile O6 is maintained only by the Kafka Streams topology (OrderAnalyticsProjectionService returns early when app.kafka.enabled=true), and the window aggregate is only emitted after the state-store cache/commit cycle (default commit interval 30s), so readings can stay unchanged or too low for tens of seconds after an order. Use docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics to confirm LAG is 0.'); });",
+                  "      pm.test('O6 eventually consistent (+2 orders / +60.00)', function () { throw new Error('did not converge within about 60s; last delta=' + dc + ' orders / ' + dr + '. Under the kafka profile O6 is maintained only by the Kafka Streams topology (OrderAnalyticsProjectionService returns early when app.kafka.enabled=true), and the window aggregate is only emitted after the state-store cache/commit cycle (default commit interval 30s), so readings can stay unchanged or too low for tens of seconds after an order. If it never converges, check that the topology is actually running: docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics should report an active member with LAG 0 - a stale local state directory makes it fail silently (see the README gotchas).'); });",
                   "      return;",
                   "    }",
                   "    setTimeout(poll, 400);",

@@ -78,4 +78,22 @@ Two steps need input from you: folder 5 needs `resetToken` (read it from the H2 
 - All data is in-memory H2; restarting a service resets its data (the Admin account is re-seeded on startup).
 - Order ownership is enforced per user, so even the Admin cannot read a customer's order by ID.
 - **Start Kafka before the services.** `order-service`, `inventory-Service` and `payment-service` must reach the broker while booting — wait for `docker ps` to report `318-kafka` as `healthy` first.
-- **Kafka Streams state directories.** Stopping a service from the IDE kills the JVM, so the I4 alert topology never closes its state store cleanly; on the next start it can fail silently — no `inventory-alerts` consumer group, no alerts, no HTTP error. If that happens, delete `%TEMP%\inventory-alerts-state` (override with `INVENTORY_ALERTS_STATE_DIR`) and start the service again; the state is rebuilt from the changelog topic.
+- **Kafka Streams state directories.** Both stream-processing topologies (`order-analytics` for O6, `inventory-alerts` for I4) keep a RocksDB state directory under the JVM temp directory — `order-analytics-state` and `inventory-alerts-state` (override with `ORDER_ANALYTICS_STATE_DIR` / `INVENTORY_ALERTS_STATE_DIR`). If that directory is left behind by an abrupt kill (IntelliJ's Stop) **or the broker is recreated** (`docker compose down -v`, which wipes the Kafka volume), the topology can fail to start **silently**: the consumer group never appears, no analytics rows are written, no alert is ever raised, and the API keeps answering `200`. Symptom check: `docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics` (or `--group inventory-alerts`) prints `has no active members`. Fix: delete both directories and restart the two services — the state is rebuilt from the topics.
+
+### Fresh clone checklist
+
+Everything the services need at run time lives in the git-ignored `.idea/` run configurations and in the JVM temp directory, so a fresh clone needs this once:
+
+1. `docker compose up -d`, then wait until `docker ps` reports `318-kafka` as `healthy` — Kafka must be up **before** the services.
+2. Set the IntelliJ project SDK to **JDK 21** (`Project Structure → Project`). The project targets 21, and Lombok 1.18.34 does not support JDK 25 (symptom: `com.sun.tools.javac.code.TypeTag :: UNKNOWN`).
+3. Set **Active profiles: `kafka`** on the `order-service`, `inventory-Service` and `payment-service` run configurations. Without it their Kafka producers/consumers are not created at all, so every event-driven step fails.
+4. Add **`OPENAI_API_KEY`** to the `ai-customer-service` run configuration (any OpenAI-compatible key; `OPENAI_BASE_URL` / `OPENAI_MODEL` default to DeepSeek).
+5. Clear the two Kafka Streams state directories if the broker was ever recreated:
+   ```powershell
+   Remove-Item -Recurse -Force "$env:TEMP\order-analytics-state","$env:TEMP\inventory-alerts-state" -ErrorAction SilentlyContinue
+   ```
+6. Start the six services and confirm the four consumer groups exist:
+   ```powershell
+   docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list
+   ```
+   Expected: `inventory-service`, `order-service`, `order-analytics`, `inventory-alerts`.
