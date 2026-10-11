@@ -167,21 +167,17 @@ Note on session ids: the client generates the UUID as part of the path, and the 
 | 1.20 O6 | delta = 0 orders / 0 within 10 s | The poll window was shorter than the topology commit cycle. Under the `kafka` profile O6 is maintained only by the Kafka Streams topology and the window aggregate reaches the read model only after the state-store cache / commit cycle (default commit interval 30 s). Minutes later the same endpoint returned **10 orders / 239.98**, i.e. two runs of four orders each plus the two orders of the older collection - the topology is healthy, just slow. The window is now about 64 s |
 | 3.10 I4 alert | no alert within 9 s | **Real defect: the I4 topology is not running at all** (see below) |
 
-### Real finding: I4 (low-stock alerts) is unavailable under the kafka profile
+### Real finding: the I4 topology silently fails to start on a leftover state directory
 
-`docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list` lists only three groups:
+Symptom, reproduced twice: `GET /inventory/alerts` keeps returning an empty array, and `docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list` shows only `inventory-service`, `order-service` and `order-analytics` — the `inventory-alerts` group that `@Configuration @Profile("kafka") LowStockAlertTopologyConfig` must create never appears, so requirement I4 (the automatic low-stock alert) cannot work at all under the kafka profile.
 
-```
-inventory-service     <- I2/I5 Spring Cloud Stream consumers, healthy
-order-service         <- O5 consumer, healthy
-order-analytics       <- O6 Kafka Streams topology, healthy (LAG=0)
-```
+Controls that rule out the obvious explanations: `stock.changed` exists and had accumulated messages (11–38), so the producer side is healthy; the running inventory-Service does have the kafka profile (its `inventory-service` group is active with LAG 0); the compiled classes on disk postdate the commit that introduced the topology; and Kafka was up 10 minutes before the service was started.
 
-**`inventory-alerts` is missing.** `LowStockAlertTopologyConfig` is `@Configuration @Profile("kafka")`, so a successful `KafkaStreams.start()` must create that consumer group (the O6 group is proof of the mechanism). The I4 Streams instance is therefore not running healthily - it either never started or dies immediately - and consequently `GET /inventory/alerts` can never return an alert: **requirement I4 is effectively unavailable under the kafka profile**, which is exactly the "automatic low-stock alert" feature that has to be demonstrated.
+Differential experiment (decisive): a second inventory-Service instance started from the same code, the same broker and the same profile but with a **fresh** state directory (`-Dapp.alerts.state-dir=…`) brings the topology up in about a second — `CREATED -> REBALANCING -> RUNNING`, `Started 1 stream threads` — and the `inventory-alerts` group appears immediately; the same code pointed at the existing `%TEMP%\inventory-alerts-state` does not start at all. That directory still holds the RocksDB store from the last good run and has not been touched since, i.e. the client never even opened it — the leftover directory is what blocks startup.
 
-Supporting evidence from the local state directory: `%TEMP%\inventory-alerts-state\inventory-alerts\` contains only `.lock` and `kafka-streams-process-metadata`, with no task directory, while the working `order-analytics` state dir contains a task directory that is still being written to. That means the client was constructed at some point but has never created a task, i.e. it never joined the group.
+**Remedy:** stop the service, delete `%TEMP%\inventory-alerts-state` (override the location with `INVENTORY_ALERTS_STATE_DIR`) and start it again with Kafka already running; the state is rebuilt from the changelog topic, so nothing is lost. The deeper cause is that stopping a service from the IDE kills the JVM, so Kafka Streams never closes its state store cleanly — hence the "start Kafka first / clear the state directory after a hard kill" gotcha now recorded in the README.
 
-Suggested order of investigation: (1) grep the inventory-Service console for `KafkaStreams`, `StreamsException`, `state directory`, `ERROR`; (2) delete `%TEMP%\inventory-alerts-state` and restart with the kafka profile (a stale or incompatible state directory can abort startup before the first join); (3) rebuild the service first (Build -> Rebuild Project) in case the running process predates the topology fix; (4) after restarting, confirm the group appears with the command above and re-run 3.10 / 3.12.
+Why the recorded run could not see any of this: Kafka Streams reports the failure only to the service console, never through HTTP — the API keeps answering `200` with an empty alert list.
 
 ### Real finding: the AI service disguises downstream failures as 401
 
@@ -236,4 +232,4 @@ Root cause of this run, from the service console: `dev.ai4j.openai4j.OpenAiHttpE
 | 5.18 | The lockout takes effect on the *next* login: attempt 5 still returns 401, attempt 6 returns 423 |
 | 4.21 / 4.22 / 6.6 | Cross-user isolation: orders and payments answer 403, AI sessions answer 404 to avoid leaking existence |
 | AI service 401 masking | Any model failure was reported as "invalid token", hiding the real cause; **fixed** on `fix/ai-error-masking` (see the before/after measurements above) |
-| I4 topology missing | The alert feature cannot work at all while consumer group `inventory-alerts` does not exist - the strongest defect found by this test suite |
+| I4 topology silently not starting | A leftover Kafka Streams state directory (left behind by an abrupt kill) stops the alert topology with no HTTP-visible error — only the consumer-group list and the service console reveal it. The strongest defect found by this test suite |
