@@ -80,7 +80,7 @@ Two steps need input from you: folder 5 needs `resetToken` (read it from the H2 
 - **Start Kafka before the services.** `order-service`, `inventory-Service` and `payment-service` must reach the broker while booting — wait for `docker ps` to report `318-kafka` as `healthy` first.
 - **Kafka Streams state directories.** Both stream-processing topologies (`order-analytics` for O6, `inventory-alerts` for I4) keep a RocksDB state directory under the JVM temp directory — `order-analytics-state` and `inventory-alerts-state` (override with `ORDER_ANALYTICS_STATE_DIR` / `INVENTORY_ALERTS_STATE_DIR`). If that directory is left behind by an abrupt kill (IntelliJ's Stop) **or the broker is recreated** (`docker compose down -v`, which wipes the Kafka volume), the topology can fail to start **silently**: the consumer group never appears, no analytics rows are written, no alert is ever raised, and the API keeps answering `200`. Symptom check: `docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics` (or `--group inventory-alerts`) prints `has no active members`. Fix: delete both directories and restart the two services — the state is rebuilt from the topics.
 
-### Fresh clone checklist
+## Fresh clone checklist
 
 Everything the services need at run time lives in the git-ignored `.idea/` run configurations and in the JVM temp directory, so a fresh clone needs this once:
 
@@ -97,3 +97,66 @@ Everything the services need at run time lives in the git-ignored `.idea/` run c
    docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list
    ```
    Expected: `inventory-service`, `order-service`, `order-analytics`, `inventory-alerts`.
+
+## Troubleshooting
+
+Notes from the recorded test runs. The consumer-group list is the single most useful diagnostic —
+most "the API works but the tests fail" situations show up here:
+
+```powershell
+docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --list
+# expected: inventory-service, order-service, order-analytics, inventory-alerts
+```
+
+### A whole family of event-driven assertions fails at once (eight to ten simultaneously)
+
+- **Symptom**: login, catalogue, order placement and payment all pass, but every step that waits for a
+  Kafka hop times out ("not PAID within 8s", "not back to 48"), orders stay `PENDING`, and refunds that
+  should be rejected unexpectedly succeed.
+- **Check**: compare the topics. If `order.created` has messages while `payment.confirmed` and
+  `payment.failed` have none, one service is not publishing at all.
+- **Cause**: `order-service`, `inventory-Service` or `payment-service` was started **without** the
+  `kafka` profile. Their Kafka beans exist only under that profile — deliberately, so that `mvn test`
+  needs no broker — which turns publishing and consuming into silent no-ops. The service still starts,
+  every REST endpoint still answers, and nothing in the HTTP layer hints at the problem.
+- **Fix**: set **Active profiles: `kafka`** on those three run configurations and restart them (see the
+  fresh-clone checklist), then confirm with the consumer-group list above.
+
+### `GET /inventory/alerts` is always empty, or the `inventory-alerts` group never appears
+
+- **Symptom**: requirement I4 looks unimplemented — no alert is ever raised and
+  `.../inventory/alerts` keeps returning `[]` — while O6 analytics works normally.
+- **Check**: `--describe --group inventory-alerts` reports `has no active members`; the group may
+  disappear entirely, because Kafka deletes an empty group that never committed an offset.
+- **Cause**: a Kafka Streams state directory left over from an earlier run, or from an earlier broker
+  generation (`docker compose down -v` wipes the Kafka volume while the local RocksDB state survives).
+  Kafka Streams reports the failure **only to the service console**; the API keeps answering `200`, so
+  it looks as if the feature does not exist.
+- **Fix**: stop the service, delete `%TEMP%\inventory-alerts-state` (override the location with
+  `INVENTORY_ALERTS_STATE_DIR`) and start it again with Kafka already running. Do **not** delete
+  `order-analytics-state` while `order-service` is running — that topology is alive and using it.
+
+### IntelliJ reports `No JDK for module ...` or `com.sun.tools.javac.code.TypeTag :: UNKNOWN`
+
+- **Cause**: the IDE's project SDK drifted to JDK 25 (the newest JDK installed on the machine). The
+  project targets 21, and Lombok 1.18.34 does not support JDK 25.
+- **Fix**: `Project Structure → Project → SDK = 21`, then rebuild. Maven is unaffected — it uses
+  `JAVA_HOME` — which is why `mvn test` can be green while the IDE build fails.
+
+### Postman Runner reports `Errors: 1` although everything passes
+
+- `Errors` counts **script** errors, not failed requests. A JavaScript error in a request's
+  post-response script makes Postman skip that request's assertions — they are then neither passed nor
+  failed, so an apparently green summary can hide assertions that never ran (this happened to step 6.1
+  and silently skipped four session-dependent AI assertions).
+- **Check**: `Console log` → `Script: SyntaxError`, or click into the request and read the `SCRIPT`
+  badge.
+- `Failed` is the number that describes the API contract; `Errors` describes the test scripts.
+
+### Two working copies of the repository at the same time
+
+- Two checkouts both binding ports 8081-8086 and both joining the same consumer groups fight over the
+  broker and over the same local state directories. The resulting failures look random: a service that
+  "is running" may not be the one you edited, or a topology may die because another instance holds its
+  state directory.
+- **Fix**: work in exactly one checkout and close the other project in the IDE.
