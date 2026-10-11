@@ -1,6 +1,7 @@
 package com.ecommerce.aicustomerservice.exception;
 
 import com.ecommerce.aicustomerservice.dto.ErrorResponse;
+import dev.ai4j.openai4j.OpenAiHttpException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -15,6 +16,25 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(ApiException ex) {
         return ResponseEntity.status(ex.getStatus()).body(new ErrorResponse(ex.getCode(), ex.getMessage()));
+    }
+
+    /**
+     * AI1/AI2 — a failing model call. Reported explicitly (502 Bad Gateway, carrying the provider's
+     * own message) instead of being left to Spring's error handling: before this mapping existed the
+     * only thing a client saw was 401 "Missing or invalid authentication token" for every model
+     * failure, so an invalid API key was indistinguishable from a bad token. Discovered during the
+     * manual test run whose evidence is recorded in
+     * {@code postman/318-full-coverage-expected-results.md}.
+     */
+    @ExceptionHandler(OpenAiHttpException.class)
+    public ResponseEntity<ErrorResponse> handleModelCallFailure(OpenAiHttpException ex) {
+        String providerMessage = ex.getMessage() == null ? "no provider message supplied" : ex.getMessage();
+        if (providerMessage.length() > 300) {
+            providerMessage = providerMessage.substring(0, 300) + "...";
+        }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                .body(new ErrorResponse("ModelCallFailed",
+                        "Upstream model call failed (HTTP " + ex.code() + "): " + providerMessage));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
