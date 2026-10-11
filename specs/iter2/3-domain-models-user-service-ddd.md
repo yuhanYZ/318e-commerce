@@ -1,6 +1,11 @@
 # Domain Models Specification - User Service
 
-Evolution from `specs/3-domain-models.md`:
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
+Evolution from `specs/iter1/3-domain-models.md` (Iteration 1, archived for history):
 - `User` retained as the aggregate root, now expressed with typed value objects instead of primitive fields.
 - `PasswordResetToken` promoted to its own small aggregate (referenced by `UserId`, not composed inside `User`).
 - Implicit login-lockout logic (`failedLoginAttempts` counter) made explicit as an `AuthenticationService` domain service plus an `AccountLocked` domain event.
@@ -38,7 +43,8 @@ Evolution from `specs/3-domain-models.md`:
 | :--- | :--- | :--- |
 | **U1. Register an Account** | `User`, `Email`, `PasswordHash` | `UserRegistered` |
 | **U2. Login** | `User`, `AuthenticationService` | `UserLoggedIn`, `AccountLocked` (after 5 failures) |
-| **U3. View / Update Profile** | `User`, `ContactInfo` | `ProfileUpdated` |
+| **U3a. View Profile** | `User`, `ContactInfo` | None |
+| **U3b. Update Profile** | `User`, `ContactInfo` | `ProfileUpdated` |
 | **U4. Reset Password** | `PasswordResetToken`, `PasswordResetService`, `User` | `PasswordResetRequested`, `PasswordResetCompleted` |
 | **U5. Deactivate Account** | `User` | `AccountDeactivated` |
 
@@ -108,8 +114,8 @@ Evolution from `specs/3-domain-models.md`:
 | `id` | `UserId` | Unique user identifier | Primary identifier |
 | `email` | `Email` | Login email | Required, unique |
 | `passwordHash` | `PasswordHash` | Hashed password | Required |
-| `name` | `String` | Display name | Editable via U3 |
-| `contact` | `ContactInfo` | Address and phone | Editable via U3 |
+| `name` | `String` | Display name | Editable via U3b |
+| `contact` | `ContactInfo` | Address and phone | Editable via U3b |
 | `role` | `Role` | Account role | Required |
 | `status` | `AccountStatus` | Current account status | Default: `ACTIVE` |
 | `failedLoginAttempts` | `int` | Consecutive failed login count | Reset on successful login |

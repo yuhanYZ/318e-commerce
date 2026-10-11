@@ -1,9 +1,15 @@
 package com.ecommerce.userservice.service;
 
+import com.ecommerce.userservice.domain.AccountStatus;
+import com.ecommerce.userservice.domain.AuthenticationService;
+import com.ecommerce.userservice.domain.ContactInfo;
+import com.ecommerce.userservice.domain.Email;
+import com.ecommerce.userservice.domain.PasswordHash;
+import com.ecommerce.userservice.domain.PasswordResetService;
 import com.ecommerce.userservice.domain.PasswordResetToken;
+import com.ecommerce.userservice.domain.ResetToken;
 import com.ecommerce.userservice.domain.User;
-import com.ecommerce.userservice.domain.UserRole;
-import com.ecommerce.userservice.domain.UserStatus;
+import com.ecommerce.userservice.domain.UserId;
 import com.ecommerce.userservice.dto.AuthResponse;
 import com.ecommerce.userservice.dto.LoginRequest;
 import com.ecommerce.userservice.dto.PasswordResetConfirmRequest;
@@ -21,156 +27,180 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
 
 /**
  * Command Application Service for User Service — specs/iter2/6-cqrs-command-query.md §3.1.
- * Covers U1, U2, U3 (update), U4, U5.
+ * Covers U1, U2, U3b (update), U4, U5.
+ *
+ * <p>Every state change goes through a {@link User} behavior or a
+ * {@link PasswordResetToken} behavior; this class only orchestrates (load → behave → persist →
+ * dispatch the events the aggregate raised), which is what the layered architecture in
+ * specs/iter2/1-technical-architecture-v2.md asks of the service layer.
  */
 @Service
 @Transactional
 public class UserCommandService {
 
-    private static final int MAX_FAILED_ATTEMPTS = 5;
-    private static final Duration LOCKOUT_DURATION = Duration.ofMinutes(10);
-    private static final Duration RESET_TOKEN_TTL = Duration.ofMinutes(30);
-
     private final UserRepository userRepository;
     private final PasswordResetTokenRepository tokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtService jwtService;
+    private final AuthenticationService authenticationService;
+    private final PasswordResetService passwordResetService;
+    private final DomainEventPublisher domainEventPublisher;
 
     public UserCommandService(UserRepository userRepository,
-                               PasswordResetTokenRepository tokenRepository,
-                               PasswordEncoder passwordEncoder,
-                               JwtService jwtService) {
+                              PasswordResetTokenRepository tokenRepository,
+                              PasswordEncoder passwordEncoder,
+                              JwtService jwtService,
+                              AuthenticationService authenticationService,
+                              PasswordResetService passwordResetService,
+                              DomainEventPublisher domainEventPublisher) {
         this.userRepository = userRepository;
         this.tokenRepository = tokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtService = jwtService;
+        this.authenticationService = authenticationService;
+        this.passwordResetService = passwordResetService;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
     /** U1 — Register an Account. */
     public UserResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        Email email = emailOrThrow(request.email());
+        if (userRepository.existsByEmail(email)) {
             throw new ApiException(HttpStatus.CONFLICT, "EmailAlreadyExists",
                     "An account with this email already exists");
         }
-        User user = new User();
-        user.setId("USR-" + shortId());
-        user.setEmail(request.email());
-        user.setPasswordHash(passwordEncoder.encode(request.password()));
-        user.setRole(UserRole.CUSTOMER);
-        user.setStatus(UserStatus.ACTIVE);
-        user.setFailedLoginAttempts(0);
-        user.setCreatedAt(Instant.now());
+        Instant now = Instant.now();
+        User user = User.register(new UserId("USR-" + shortId()), email,
+                new PasswordHash(passwordEncoder.encode(request.password())), null, ContactInfo.empty(), now);
         userRepository.save(user);
+        domainEventPublisher.publish(user.pullDomainEvents());
         return UserMapper.toUserResponse(user);
     }
 
     /**
      * U2 — Login. 5 failed attempts within 10 minutes locks the account (423) until auto-unlock.
      *
-     * <p>noRollbackFor is required here: the class-level @Transactional defaults to rolling back
-     * on any unchecked exception, and invalidCredentials()/AccountLocked are both ApiException
-     * (unchecked). Without this override, the failedLoginAttempts/lockedUntil save() just above
-     * each throw would be silently discarded when the transaction rolls back — so the lockout
-     * counter would never actually persist and the account would never lock.
+     * <p>noRollbackFor is required here: the class-level @Transactional defaults to rolling back on
+     * any unchecked exception, and failedCredentials()/AccountLocked are both ApiException
+     * (unchecked). Without this override, the failed-attempt save() just above each throw would be
+     * silently discarded when the transaction rolls back — so the lockout counter would never
+     * actually persist and the account would never lock.
      */
     @Transactional(noRollbackFor = ApiException.class)
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByEmail(request.email())
-                .orElseThrow(() -> invalidCredentials());
+        Email email = emailOrThrow(request.email());
+        User user = userRepository.findByEmail(email).orElseThrow(UserCommandService::invalidCredentials);
 
-        if (user.getStatus() == UserStatus.DEACTIVATED) {
+        if (user.getStatus() == AccountStatus.DEACTIVATED) {
             throw invalidCredentials();
         }
 
+        Instant now = Instant.now();
         if (user.isCurrentlyLocked()) {
             throw new ApiException(HttpStatus.LOCKED, "AccountLocked",
                     "Account locked after 5 failed login attempts within 10 minutes");
         }
+        user.unlockIfExpired(now);
 
-        if (user.getLockedUntil() != null) {
-            // Lock window has elapsed - auto-unlock before evaluating this attempt.
-            user.setLockedUntil(null);
-            user.setFailedLoginAttempts(0);
-        }
-
-        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
-            int attempts = user.getFailedLoginAttempts() + 1;
-            user.setFailedLoginAttempts(attempts);
-            if (attempts >= MAX_FAILED_ATTEMPTS) {
-                user.setLockedUntil(Instant.now().plus(LOCKOUT_DURATION));
-            }
+        if (!authenticationService.verifyCredentials(user, request.password())) {
+            authenticationService.recordFailedAttempt(user, now);
             userRepository.save(user);
+            domainEventPublisher.publish(user.pullDomainEvents());
             throw invalidCredentials();
         }
 
-        user.setFailedLoginAttempts(0);
+        authenticationService.resetFailureCount(user);
+        user.recordSuccessfulLogin(now);
         userRepository.save(user);
-        String token = jwtService.issueToken(user.getId(), user.getRole().name());
-        return new AuthResponse(token, user.getId());
+        domainEventPublisher.publish(user.pullDomainEvents());
+        return new AuthResponse(jwtService.issueToken(user.getId().value(), user.getRole().name()),
+                user.getId().value());
     }
 
-    /** U3 — Update Profile (partial; only non-null fields change). */
+    /** U3b — Update Profile (partial; only non-null fields change). */
     public UserProfileResponse updateProfile(String userId, UpdateProfileRequest request) {
         User user = getUserOrThrow(userId);
-        if (request.name() != null) {
-            user.setName(request.name());
+        ContactInfo current = user.getContact() == null ? ContactInfo.empty() : user.getContact();
+        ContactInfo contact = null;
+        if (request.address() != null || request.phone() != null) {
+            contact = new ContactInfo(
+                    request.address() != null ? request.address() : current.address(),
+                    request.phone() != null ? request.phone() : current.phone());
         }
-        if (request.address() != null) {
-            user.setAddress(request.address());
-        }
-        if (request.phone() != null) {
-            user.setPhone(request.phone());
-        }
+        user.updateProfile(request.name(), contact, Instant.now());
         userRepository.save(user);
+        domainEventPublisher.publish(user.pullDomainEvents());
         return UserMapper.toProfileResponse(user);
     }
 
     /** U5 — Deactivate Account (soft delete). */
     public void deactivate(String userId) {
         User user = getUserOrThrow(userId);
-        user.setStatus(UserStatus.DEACTIVATED);
+        user.deactivate(Instant.now());
         userRepository.save(user);
+        domainEventPublisher.publish(user.pullDomainEvents());
     }
 
-    /** U4 — Request Password Reset. Always a no-op success from the caller's point of view. */
+    /**
+     * U4 — Request Password Reset. Always a no-op success from the caller's point of view: an
+     * unknown (or even unparseable) email must not be distinguishable from a known one, so this
+     * endpoint has to avoid enumeration. The reset token is never returned over the API — it would
+     * go out by email in a real system.
+     */
     public void requestPasswordReset(PasswordResetRequest request) {
-        userRepository.findByEmail(request.email()).ifPresent(user -> {
-            PasswordResetToken resetToken = new PasswordResetToken();
-            resetToken.setId("PRT-" + shortId());
-            resetToken.setUserId(user.getId());
-            resetToken.setToken(shortId() + shortId());
-            resetToken.setExpiresAt(Instant.now().plus(RESET_TOKEN_TTL));
-            resetToken.setUsed(false);
-            resetToken.setCreatedAt(Instant.now());
+        Email email;
+        try {
+            email = new Email(request.email());
+        } catch (IllegalArgumentException ex) {
+            return;
+        }
+        userRepository.findByEmail(email).ifPresent(user -> {
+            PasswordResetToken resetToken = passwordResetService.generateToken(user.getId(), Instant.now());
             tokenRepository.save(resetToken);
+            domainEventPublisher.publish(resetToken.pullDomainEvents());
         });
     }
 
     /** U4 — Confirm Password Reset. */
     public void confirmPasswordReset(PasswordResetConfirmRequest request) {
-        PasswordResetToken resetToken = tokenRepository.findByToken(request.token())
-                .filter(t -> !t.isUsed() && t.getExpiresAt().isAfter(Instant.now()))
-                .orElseThrow(UserCommandService::resetTokenInvalid);
-
+        Instant now = Instant.now();
+        PasswordResetToken resetToken;
+        try {
+            resetToken = tokenRepository.findByToken(new ResetToken(request.token()))
+                    .orElseThrow(UserCommandService::resetTokenInvalid);
+        } catch (IllegalArgumentException ex) {
+            throw resetTokenInvalid();
+        }
+        if (!passwordResetService.validateToken(resetToken, now)) {
+            throw resetTokenInvalid();
+        }
         User user = userRepository.findById(resetToken.getUserId())
                 .orElseThrow(UserCommandService::resetTokenInvalid);
 
-        user.setPasswordHash(passwordEncoder.encode(request.newPassword()));
-        userRepository.save(user);
+        resetToken.consume(now);
+        user.changePassword(new PasswordHash(passwordEncoder.encode(request.newPassword())));
 
-        resetToken.setUsed(true);
+        userRepository.save(user);
         tokenRepository.save(resetToken);
+        domainEventPublisher.publish(resetToken.pullDomainEvents());
     }
 
     private User getUserOrThrow(String userId) {
-        return userRepository.findById(userId)
+        return userRepository.findById(new UserId(userId))
                 .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "User not found"));
+    }
+
+    private static Email emailOrThrow(String rawEmail) {
+        try {
+            return new Email(rawEmail);
+        } catch (IllegalArgumentException ex) {
+            throw new ApiException(HttpStatus.BAD_REQUEST, "ValidationFailed", "Not a valid email address");
+        }
     }
 
     private static ApiException invalidCredentials() {

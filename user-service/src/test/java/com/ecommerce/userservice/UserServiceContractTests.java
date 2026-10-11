@@ -185,7 +185,7 @@ class UserServiceContractTests {
     }
 
     // ---------------------------------------------------------------
-    // U3 — View / Update Profile (GET, PUT /users/me)
+    // U3a/U3b — View / Update Profile (GET, PUT /users/me)
     // ---------------------------------------------------------------
 
     @Test

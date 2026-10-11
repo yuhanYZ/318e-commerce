@@ -43,8 +43,10 @@ public class PaymentController {
     }
 
     @GetMapping("/order/{orderId}")
-    public PaymentResponse getPaymentByOrderId(@PathVariable String orderId) {
-        return queryService.getPaymentByOrderId(orderId);
+    public PaymentResponse getPaymentByOrderId(@PathVariable String orderId,
+                                                @RequestHeader(value = "Authorization", required = false)
+                                                String authorizationHeader) {
+        return queryService.getPaymentByOrderId(orderId, authorizationHeader);
     }
 
     @PostMapping("/{id}/refund")

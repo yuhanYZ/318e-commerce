@@ -8,11 +8,13 @@ import com.ecommerce.aicustomerservice.dto.SessionStatusResponse;
 import com.ecommerce.aicustomerservice.service.ConversationCommandService;
 import com.ecommerce.aicustomerservice.service.ConversationQueryService;
 import jakarta.validation.Valid;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -35,8 +37,10 @@ public class AiChatController {
     @PostMapping("/sessions/{sessionId}/messages")
     public ChatMessageResponse sendMessage(@PathVariable String sessionId,
                                             @Valid @RequestBody ChatMessageRequest request,
+                                            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                                            String authorization,
                                             Authentication authentication) {
-        return commandService.sendMessage(sessionId, authentication.getName(), request);
+        return commandService.sendMessage(sessionId, authentication.getName(), request, authorization);
     }
 
     @PostMapping("/sessions/{sessionId}/escalate")

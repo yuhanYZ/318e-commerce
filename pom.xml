@@ -44,6 +44,19 @@
                  Spring Boot 3.3.x (see spring.io/projects/spring-cloud#overview)
                - langchain4j.version: dev.langchain4j current release -->
         <langchain4j.version>0.36.0</langchain4j.version>
+        <!-- Maven's ancient default (2.12.4, inherited from the super POM because this
+             project uses its own aggregator parent instead of spring-boot-starter-parent)
+             cannot run JUnit 5 tests: it falls back to the JUnit 3 provider and, worse,
+             its default include pattern is **/*Test.java, which does not match this
+             project's **/*Tests.java contract test classes — so `mvn test` silently ran
+             zero tests. 3.2.5 is the version spring-boot-starter-parent 3.3.x manages. -->
+        <maven-surefire.version>3.2.5</maven-surefire.version>
+        <!-- Same root cause as surefire above: without an explicit version, Maven's super POM
+             binds maven-compiler-plugin 3.1, which predates the <parameters> option (added in
+             3.6.1) — so <parameters>true</parameters> was silently ignored and Spring could not
+             resolve @PathVariable/@RequestParam argument names at runtime. 3.13.0 is the version
+             spring-boot-starter-parent 3.3.x manages. -->
+        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -83,6 +96,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
                     <configuration>
                         <parameters>true</parameters>
                     </configuration>
@@ -91,6 +105,17 @@
                     <groupId>org.springframework.boot</groupId>
                     <artifactId>spring-boot-maven-plugin</artifactId>
                     <version>${spring-boot.version}</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire.version}</version>
+                    <configuration>
+                        <includes>
+                            <include>**/*Tests.java</include>
+                            <include>**/*Test.java</include>
+                        </includes>
+                    </configuration>
                 </plugin>
             </plugins>
         </pluginManagement>

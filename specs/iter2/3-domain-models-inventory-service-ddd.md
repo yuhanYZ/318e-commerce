@@ -1,6 +1,11 @@
 # Domain Models Specification - Inventory Service
 
-Evolution from `specs/3-domain-models.md`:
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
+Evolution from `specs/iter1/3-domain-models.md` (Iteration 1, archived for history):
 - `StockItem` promoted to an aggregate root; `quantityAvailable` re-typed as a validated `Quantity` value object.
 - `StockItem` is the only **event-sourced** aggregate in the system (see `5-event-sourcing.md`). Its identity `StockItemId` takes the same value as `ProductId` — one product maps to exactly one event stream — so `StockItemId` and `ProductId` are interchangeable for stream lookup.
 - `lowStockThreshold` **removed from `StockItem`** — per the earlier decision, the threshold is a single global system-wide value rather than a per-product field. It now lives as configuration read by `InventoryPolicyService`.
@@ -141,7 +146,7 @@ Evolution from `specs/3-domain-models.md`:
 | Consumed | `OrderCreatedEvent` (from Order Service) | I2 handler | `deduct(quantity, orderId)` per item |
 | Consumed | `OrderCancelledEvent` (from Order Service) | I5 handler | `release(quantity, orderId)` per item |
 | Consumed | `PaymentFailedEvent` (from Payment Service) | I5 handler | `release(quantity, orderId)` per item — Inventory resolves the order's items from its own `StockDeducted` history for that `orderId`, so `PaymentFailedEvent` only needs to carry `orderId` |
-| Published | *(none)* | — | `StockDeducted` / `StockReleased` / `StockAdjusted` / `LowStockAlert*` are internal domain events; the `StockUpdatedEvent` from iter1 has no consumer and is not published |
+| Published | *(none)* | — | `StockDeducted` / `StockReleased` / `StockAdjusted` / `LowStockAlert*` are internal domain events; the `StockUpdatedEvent` from Iteration 1 (archived) has no consumer and is not published |
 
 Both I2 and I5 handlers are idempotent per (`orderId`, `productId`): a redelivered Kafka message must not deduct or release twice.
 

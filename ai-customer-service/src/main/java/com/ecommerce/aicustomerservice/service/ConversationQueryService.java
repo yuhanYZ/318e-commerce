@@ -1,6 +1,7 @@
 package com.ecommerce.aicustomerservice.service;
 
 import com.ecommerce.aicustomerservice.domain.ConversationSession;
+import com.ecommerce.aicustomerservice.domain.SessionId;
 import com.ecommerce.aicustomerservice.dto.MessageLogEntry;
 import com.ecommerce.aicustomerservice.dto.SessionPageResponse;
 import com.ecommerce.aicustomerservice.exception.ApiException;
@@ -14,7 +15,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
 
-/** AI4 (Admin only) — list all sessions, and view one session's full message log. */
+/**
+ * Query Application Service for AI-Customer Service — specs/iter2/6-cqrs-command-query.md §3.2.
+ * AI4 (Admin only): list all sessions, and view one session's full message log.
+ */
 @Service
 @Transactional(readOnly = true)
 public class ConversationQueryService {
@@ -35,8 +39,18 @@ public class ConversationQueryService {
     }
 
     public List<MessageLogEntry> getSessionMessages(String sessionId) {
-        ConversationSession session = sessionRepository.findById(sessionId)
-                .orElseThrow(() -> new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "Session not found"));
+        SessionId id;
+        try {
+            id = new SessionId(sessionId);
+        } catch (IllegalArgumentException ex) {
+            throw sessionNotFound();
+        }
+        ConversationSession session = sessionRepository.findById(id)
+                .orElseThrow(ConversationQueryService::sessionNotFound);
         return session.getMessages().stream().map(ConversationMapper::toLogEntry).toList();
+    }
+
+    private static ApiException sessionNotFound() {
+        return new ApiException(HttpStatus.NOT_FOUND, "ResourceNotFound", "Session not found");
     }
 }

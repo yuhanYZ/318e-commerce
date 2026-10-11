@@ -17,7 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 /**
  * Public endpoints (no token): U1, U2, U4 — see specs/iter2/4-api-endpoints-v2.md §7a.
- * Everything else (U3, U5) requires a valid JWT; there are no Admin-only endpoints in
+ * Everything else (U3a, U3b, U5) requires a valid JWT; there are no Admin-only endpoints in
  * User Service itself.
  */
 @Configuration

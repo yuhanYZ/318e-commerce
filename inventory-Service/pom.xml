@@ -86,9 +86,25 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-stream-binder-kafka</artifactId>
         </dependency>
+        <!-- I4 — the low-stock-alert projection is a Kafka Streams topology over stock.changed
+             (specs/iter2/6-cqrs-command-query.md §8). The Kafka Streams library is used directly
+             rather than through Spring Cloud Stream's Kafka Streams binder: that binder cannot
+             coexist with the Kafka binder in one application (both declare a
+             KafkaBinderConfigurationProperties bean, which the streams binder's JAAS configuration
+             then cannot disambiguate), and this service needs the Kafka binder for its I2/I5
+             consumers. Active only under the "kafka" profile. -->
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.springframework.kafka</groupId>
             <artifactId>spring-kafka-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.kafka</groupId>
+            <artifactId>kafka-streams-test-utils</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

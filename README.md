@@ -17,6 +17,7 @@ CSCI318 capstone: an event-driven e-commerce backend built as six Spring Boot mi
 - Auth: JWT (HS256) with a secret shared across all services; each service validates tokens locally
 - Async flows over Kafka: `order.created` / `order.cancelled` → Inventory; `payment.confirmed` / `payment.failed` → Order (and Inventory)
 - Design docs: [`specs/iter2/`](specs/iter2) (architecture, user stories, DDD domain models, API list, event sourcing, CQRS). API contract: [`specs/iter2/openapi-contract-v2.yaml`](specs/iter2/openapi-contract-v2.yaml)
+- Iteration 1 specs are kept in [`specs/iter1/`](specs/iter1) as an archived historical record — superseded by `specs/iter2/`, not the current design of record.
 
 ## Prerequisites
 

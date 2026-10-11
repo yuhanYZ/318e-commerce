@@ -1,6 +1,11 @@
 # Domain Models Specification - Payment Service
 
-Evolution from `specs/3-domain-models.md`:
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
+Evolution from `specs/iter1/3-domain-models.md` (Iteration 1, archived for history):
 - `Payment` and `Refund` promoted to aggregate roots; `amount` re-typed as `Money`, statuses re-typed as value objects.
 - `Payment.method` fixed to a constant `"MOCK"` per the earlier decision (no real/sandbox gateway integration in this project) — kept as a field for schema stability, but no longer a meaningful variation point.
 - `Refund.amount` constrained to always equal the original `Payment.amount` per the earlier decision (full refunds only, no partial refund support).

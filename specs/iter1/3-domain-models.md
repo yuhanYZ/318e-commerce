@@ -1,3 +1,5 @@
+> **Archived — Iteration 1 (superseded by [`specs/iter2/`](../iter2/)).** Kept for historical reference only; do not use as the current design of record.
+
 # Domain Models Specification
 
 ## 1. Domain Classes and Related User Stories

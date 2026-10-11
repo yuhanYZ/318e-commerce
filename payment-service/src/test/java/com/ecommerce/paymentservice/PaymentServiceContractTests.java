@@ -64,7 +64,8 @@ class PaymentServiceContractTests {
 
     private void stubOrder(String orderId, String status, double totalAmount) {
         MockRestServiceServer.bindTo(orderRestTemplate).ignoreExpectOrder(true).build()
-                .expect(requestTo("http://localhost:8083/api/v1/orders/" + orderId))
+                .expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo("http://localhost:8083/api/v1/orders/" + orderId))
                 .andExpect(method(org.springframework.http.HttpMethod.GET))
                 .andRespond(withSuccess("""
                         {"id":"%s","userId":"USR-BUYER-1","status":"%s",
@@ -77,6 +78,16 @@ class PaymentServiceContractTests {
         return """
                 {"orderId":"%s","amount":{"amount":%s,"currency":"AUD"}}
                 """.formatted(orderId, amount);
+    }
+
+    /** Order Service being unable to show the caller the order (i.e. it is not theirs). */
+    private void stubOrderNotOwned(String orderId) {
+        MockRestServiceServer.bindTo(orderRestTemplate).ignoreExpectOrder(true).build()
+                .expect(org.springframework.test.web.client.ExpectedCount.manyTimes(),
+                        requestTo("http://localhost:8083/api/v1/orders/" + orderId))
+                .andExpect(method(org.springframework.http.HttpMethod.GET))
+                .andRespond(org.springframework.test.web.client.response.MockRestResponseCreators
+                        .withStatus(org.springframework.http.HttpStatus.FORBIDDEN));
     }
 
     // ---------------------------------------------------------------
@@ -182,6 +193,25 @@ class PaymentServiceContractTests {
     }
 
     @Test
+    void getPaymentByOrderId_orderBelongsToSomeoneElse_returns403Forbidden() throws Exception {
+        String orderId = "ORD-" + UUID.randomUUID();
+        stubOrder(orderId, "PENDING", 12.00);
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token("USR-BUYER-9", "CUSTOMER"))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 12.00)))
+                .andExpect(status().isCreated());
+
+        // A different customer asks for the payment of an order they do not own. Order Service
+        // answers 403 for it, so PAY2 must not confirm whether that payment exists.
+        stubOrderNotOwned(orderId);
+        mockMvc.perform(get("/api/v1/payments/order/{orderId}", orderId)
+                        .header("Authorization", "Bearer " + token("USR-BUYER-INTRUDER", "CUSTOMER")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("Forbidden"));
+    }
+
+    @Test
     void getPaymentByOrderId_noToken_returns401() throws Exception {
         mockMvc.perform(get("/api/v1/payments/order/{orderId}", "ORD-ANY"))
                 .andExpect(status().isUnauthorized());
@@ -267,7 +297,45 @@ class PaymentServiceContractTests {
                         .header("Authorization", "Bearer " + token("USR-ADMIN-1", "ADMIN"))
                         .param("page", "0").param("size", "20"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.content").isArray());
+                .andExpect(jsonPath("$.content").isArray())
+                .andExpect(jsonPath("$.refunds").isArray());
+    }
+
+    /**
+     * Regression test for the PAY4 gap found in the specs audit: the user story and
+     * 6-cqrs-command-query.md §7 both promise "all payment and refund records", but the response
+     * used to omit Refund entirely. Creates a payment + refund, then asserts the refund is present
+     * in PAY4's {@code refunds} array (not just {@code content}, which only ever held Payments).
+     */
+    @Test
+    void listAllPayments_admin_includesRefundRecords() throws Exception {
+        String orderId = "ORD-" + UUID.randomUUID();
+        stubOrder(orderId, "PENDING", 77.00);
+        String userToken = token("USR-BUYER-11", "CUSTOMER");
+        String paymentResponse = mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 77.00)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String paymentId = com.jayway.jsonpath.JsonPath.read(paymentResponse, "$.id");
+
+        stubOrder(orderId, "CANCELLED", 77.00);
+        String refundResponse = mockMvc.perform(post("/api/v1/payments/{id}/refund", paymentId)
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String refundId = com.jayway.jsonpath.JsonPath.read(refundResponse, "$.id");
+
+        mockMvc.perform(get("/api/v1/payments")
+                        .header("Authorization", "Bearer " + token("USR-ADMIN-2", "ADMIN"))
+                        .param("page", "0").param("size", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.refunds[*].id").value(org.hamcrest.Matchers.hasItem(refundId)))
+                .andExpect(jsonPath("$.refunds[*].paymentId").value(org.hamcrest.Matchers.hasItem(paymentId)))
+                .andExpect(jsonPath("$.totalRefundElements").value(org.hamcrest.Matchers.greaterThanOrEqualTo(1)));
     }
 
     @Test

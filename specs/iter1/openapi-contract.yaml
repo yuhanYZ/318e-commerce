@@ -1,7 +1,9 @@
+# ARCHIVED — Iteration 1 (superseded by specs/iter2/openapi-contract-v2.yaml).
+# Kept for historical reference only; do not use as the current design of record.
 openapi: 3.0.3
 info:
   title: E-Commerce Microservices API Specification
-  description: OpenAPI 3.0 specification for the 318e-e-commerce microservice application (CSCI318 capstone) — User, Product, Order, Inventory, Payment, and AI-Customer services, based on user stories.
+  description: OpenAPI 3.0 specification for the 318e-e-commerce microservice application — User, Product, Order, Inventory, Payment, and AI-Customer services, based on user stories.
   version: 1.0.0
 servers:
   - url: http://localhost:8081/api/v1

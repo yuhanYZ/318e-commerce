@@ -1,9 +1,11 @@
 package com.ecommerce.userservice.config;
 
+import com.ecommerce.userservice.domain.Email;
+import com.ecommerce.userservice.domain.PasswordHash;
 import com.ecommerce.userservice.domain.User;
-import com.ecommerce.userservice.domain.UserRole;
-import com.ecommerce.userservice.domain.UserStatus;
+import com.ecommerce.userservice.domain.UserId;
 import com.ecommerce.userservice.repository.UserRepository;
+import com.ecommerce.userservice.service.DomainEventPublisher;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -14,39 +16,40 @@ import java.time.Instant;
 /**
  * Seeds the single Admin account from app.admin.email/password at startup — no self-service
  * Admin path (specs/iter2/2-user-stories-user-service-v2.md "Roles and Admin Provisioning").
+ * The seed is idempotent: it is skipped if that email already exists.
  */
 @Component
 public class AdminSeeder implements CommandLineRunner {
 
+    private static final String ADMIN_ID = "USR-ADMIN";
+
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
+    private final DomainEventPublisher domainEventPublisher;
     private final String adminEmail;
     private final String adminPassword;
 
     public AdminSeeder(UserRepository userRepository,
                         PasswordEncoder passwordEncoder,
+                        DomainEventPublisher domainEventPublisher,
                         @Value("${app.admin.email}") String adminEmail,
                         @Value("${app.admin.password}") String adminPassword) {
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.domainEventPublisher = domainEventPublisher;
         this.adminEmail = adminEmail;
         this.adminPassword = adminPassword;
     }
-//fix it up
+
     @Override
     public void run(String... args) {
-        if (userRepository.existsByEmail(adminEmail)) {
+        Email email = new Email(adminEmail);
+        if (userRepository.existsByEmail(email)) {
             return;
         }
-        User admin = new User();
-        admin.setId("USR-ADMIN");
-        admin.setEmail(adminEmail);
-        admin.setPasswordHash(passwordEncoder.encode(adminPassword));
-        admin.setRole(UserRole.ADMIN);
-        admin.setStatus(UserStatus.ACTIVE);
-        admin.setFailedLoginAttempts(0);
-        admin.setCreatedAt(Instant.now());
+        User admin = User.seedAdmin(new UserId(ADMIN_ID), email,
+                new PasswordHash(passwordEncoder.encode(adminPassword)), Instant.now());
         userRepository.save(admin);
-
+        domainEventPublisher.publish(admin.pullDomainEvents());
     }
 }

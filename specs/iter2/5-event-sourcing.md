@@ -1,7 +1,9 @@
 # Event Sourcing Specification
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
 
 ## 1. Scope
 - This specification defines event sourcing for the **318 E-Commerce Platform**, where only `StockItemAggregate` (Inventory Service) is event-sourced.
@@ -32,7 +34,7 @@
 
 ### 3.2 Event Stream Identity
 - Stream key = `aggregateType` + `aggregateId`, e.g. `"StockItemAggregate:PROD-00123"`.
-- Each `productId` maps to exactly one `StockItem` stream (1:1, per `specs/3-domain-models.md` §8) — there is no per-warehouse or per-location dimension in the current architecture.
+- Each `productId` maps to exactly one `StockItem` stream (1:1, per `specs/iter1/3-domain-models.md` §8) — there is no per-warehouse or per-location dimension in the current architecture.
 
 ### 3.3 Event Types for `StockItemAggregate`
 
@@ -49,7 +51,7 @@
 
 ### 3.5 Read Model
 - `inventory_read_model(product_id PK, quantity_available, version, updated_at)` is updated synchronously in the same transaction as the event append (single-service, single-database), so I1 reads are effectively consistent; the "eventual (bounded)" label in `6-cqrs-command-query.md` §7 reflects the architectural allowance, not a required delay.
-- The low-stock evaluation (I4) runs on each `StockDeducted` / `StockReleased` / `StockAdjusted` via a Spring Cloud Stream function and updates the CRUD `LowStockAlert` aggregate.
+- The low-stock evaluation (I4) is a Kafka Streams topology over `stock.changed` — Inventory Service republishes each appended `StockDeducted` / `StockReleased` / `StockAdjusted` event to that topic (`6-cqrs-command-query.md` §8) and consumes it back as a stream, reduces it to the latest available quantity per `productId`, and updates the CRUD `LowStockAlert` aggregate. Because the threshold is no longer evaluated inline in the write transaction, I4 is eventually consistent with the event append (see `6-cqrs-command-query.md` §7).
 
 > **Note:** There is no explicit initialization event. A stream starts with its first `StockAdjusted` (an Admin restock, I3) from an implicit quantity of `0` — see `3-domain-models-inventory-service-ddd.md` §2.3.1 invariant 3. A `deduct()` / `release()` against a `productId` with no stream is rejected.
 

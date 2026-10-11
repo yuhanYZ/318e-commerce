@@ -1,14 +1,16 @@
 package com.ecommerce.orderservice.domain;
 
+import jakarta.persistence.AttributeOverride;
+import jakarta.persistence.AttributeOverrides;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
+import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
-
-import java.math.BigDecimal;
 
 /**
  * {@code OrderItem} (Entity) — composed inside {@code OrderAggregate}, not an independent
@@ -26,28 +28,30 @@ public class OrderItem {
     @JoinColumn(name = "order_id", nullable = false)
     private Order order;
 
+    @Convert(converter = ProductId.JpaConverter.class)
     @Column(name = "product_id", nullable = false)
-    private String productId;
+    private ProductId productId;
 
+    @Convert(converter = Quantity.JpaConverter.class)
     @Column(nullable = false)
-    private int quantity;
+    private Quantity quantity;
 
-    @Column(name = "unit_price_amount", nullable = false)
-    private BigDecimal unitPriceAmount;
-
-    @Column(name = "unit_price_currency", nullable = false)
-    private String unitPriceCurrency;
+    @Embedded
+    @AttributeOverrides({
+            @AttributeOverride(name = "amount", column = @Column(name = "unit_price_amount", nullable = false)),
+            @AttributeOverride(name = "currency", column = @Column(name = "unit_price_currency", nullable = false))
+    })
+    private Money unitPrice;
 
     protected OrderItem() {
         // JPA
     }
 
-    public OrderItem(String id, String productId, int quantity, BigDecimal unitPriceAmount, String unitPriceCurrency) {
+    public OrderItem(String id, ProductId productId, Quantity quantity, Money unitPrice) {
         this.id = id;
         this.productId = productId;
         this.quantity = quantity;
-        this.unitPriceAmount = unitPriceAmount;
-        this.unitPriceCurrency = unitPriceCurrency;
+        this.unitPrice = unitPrice;
     }
 
     public String getId() {
@@ -62,19 +66,15 @@ public class OrderItem {
         this.order = order;
     }
 
-    public String getProductId() {
+    public ProductId getProductId() {
         return productId;
     }
 
-    public int getQuantity() {
+    public Quantity getQuantity() {
         return quantity;
     }
 
-    public BigDecimal getUnitPriceAmount() {
-        return unitPriceAmount;
-    }
-
-    public String getUnitPriceCurrency() {
-        return unitPriceCurrency;
+    public Money getUnitPrice() {
+        return unitPrice;
     }
 }

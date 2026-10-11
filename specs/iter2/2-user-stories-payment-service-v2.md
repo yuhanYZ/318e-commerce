@@ -1,8 +1,10 @@
 # User Stories — Payment Service
 
-**Project:** 318e-e-commerce (CSCI318 Capstone)
-**Status:** Draft — for team review
-**Source:** Split from [2-user-stories.md](./2-user-stories.md)
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+**Source:** Split from [iter1/2-user-stories.md](../iter1/2-user-stories.md) — Iteration 1, archived for history.
 
 ## User Story Overview
 
@@ -28,7 +30,8 @@
 - **As a** Customer, **I want to** check the payment status of my order.
 - **Scenario:**
   i. The user requests payment status for an order from Payment Service.
-  ii. Payment Service returns the current status (`Pending`, `Success`, `Failed`, `Refunded`).
+  ii. **Inter-Service Validation:** Payment Service does not store the buyer, so it sends a REST request to Order Service (`GET /orders/{id}`, forwarding the caller's bearer token) to confirm the caller can read the order their payment belongs to. A payment whose order is not the caller's is rejected with HTTP 403 `Forbidden` — never 404, so the endpoint does not confirm whether the payment exists.
+  iii. Payment Service returns the current status (`Pending`, `Success`, `Failed`, `Refunded`).
 
 ### User Story PAY3: Request a Refund
 - **As a** Customer, **I want to** request a refund for a paid order.

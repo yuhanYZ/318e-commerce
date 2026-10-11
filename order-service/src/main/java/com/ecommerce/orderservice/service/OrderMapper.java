@@ -8,6 +8,7 @@ import com.ecommerce.orderservice.dto.OrderResponse;
 
 import java.util.List;
 
+/** Maps the aggregate onto the API contract's DTOs — specs/iter2/openapi-contract-v2.yaml. */
 final class OrderMapper {
 
     private OrderMapper() {
@@ -17,12 +18,13 @@ final class OrderMapper {
         List<OrderItemResponse> items = order.getItems().stream()
                 .map(OrderMapper::toItemResponse)
                 .toList();
-        return new OrderResponse(order.getId(), order.getUserId(), order.getStatus().name(),
-                new MoneyDto(order.getTotalAmount(), order.getTotalCurrency()), items, order.getCreatedAt());
+        return new OrderResponse(order.getId().value(), order.getUserId().value(), order.getStatus().name(),
+                new MoneyDto(order.getTotalAmount().amount(), order.getTotalAmount().currency()), items,
+                order.getCreatedAt());
     }
 
     private static OrderItemResponse toItemResponse(OrderItem item) {
-        return new OrderItemResponse(item.getProductId(), item.getQuantity(),
-                new MoneyDto(item.getUnitPriceAmount(), item.getUnitPriceCurrency()));
+        return new OrderItemResponse(item.getProductId().value(), item.getQuantity().value(),
+                new MoneyDto(item.getUnitPrice().amount(), item.getUnitPrice().currency()));
     }
 }

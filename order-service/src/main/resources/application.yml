@@ -47,6 +47,9 @@ app:
     # this and OrderCommandService's Kafka publish calls are guaranteed no-ops. Activate with
     # --spring.profiles.active=kafka (or SPRING_PROFILES_ACTIVE=kafka) against a real broker - see
     # the repo's docker-compose.yml.
+  analytics:
+    window-minutes: ${ORDER_ANALYTICS_WINDOW_MINUTES:15}
+    default-currency: ${ORDER_ANALYTICS_DEFAULT_CURRENCY:AUD}
 
 ---
 spring:
@@ -65,6 +68,14 @@ spring:
           destination: payment.failed
           group: order-service
 
+# O6's topology runs the Kafka Streams library directly (see analytics.OrderAnalyticsTopologyConfig)
+# instead of through a Spring Cloud Stream binder: the Kafka Streams binder and the Kafka binder
+# cannot coexist in one application, and this service needs the latter for its O5 command consumers.
+# It consumes order.created — the topic O1 already publishes to — so no extra topic is introduced.
 app:
+  analytics:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    application-id: order-analytics
+    state-dir: ${ORDER_ANALYTICS_STATE_DIR:${java.io.tmpdir}/order-analytics-state}
   kafka:
     enabled: true

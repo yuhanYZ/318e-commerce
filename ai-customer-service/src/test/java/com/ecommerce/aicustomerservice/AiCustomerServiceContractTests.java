@@ -34,11 +34,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * `ChatAgent` bean so the contract can be verified deterministically and without network access
  * or an API key.
  *
- * REQUIRED OF PHASE 4: define a `ChatAgent` interface (e.g. `String reply(String sessionId,
- * String userMessage)`) and route the real LangChain4j call through an implementation of it, so
- * this test's `@Primary` stub bean can override it. Any tool calls to Product/Order Service from
- * inside the agent (per the openapi description) are Phase 4's concern and are not exercised by
- * this stub.
+ * REQUIRED OF PHASE 4: define a `ChatAgent` interface and route the real LangChain4j call through
+ * an implementation of it, so this test's `@Primary` stub bean can override it. The interface also
+ * carries the caller's bearer token (`reply(sessionId, userMessage, bearerToken)`) so the agent's
+ * order-grounding tool stays subject to Order Service's ownership check; the tool calls themselves
+ * are not exercised by this stub.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
@@ -56,7 +56,7 @@ class AiCustomerServiceContractTests {
         @Bean
         @Primary
         ChatAgent testChatAgent() {
-            return (sessionId, userMessage) -> "This is a stubbed AI reply for testing.";
+            return (sessionId, userMessage, bearerToken) -> "This is a stubbed AI reply for testing.";
         }
     }
 

@@ -63,6 +63,14 @@ spring:
           destination: payment.failed
           group: inventory-service
 
+# I4's topology runs the Kafka Streams library directly (see analytics.LowStockAlertTopologyConfig)
+# instead of through a Spring Cloud Stream binder: the Kafka Streams binder and the Kafka binder
+# cannot coexist in one application, and this service needs the latter for its I2/I5 consumers.
+# It consumes stock.changed, which this service republishes its own stock events to.
 app:
+  alerts:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    application-id: inventory-alerts
+    state-dir: ${INVENTORY_ALERTS_STATE_DIR:${java.io.tmpdir}/inventory-alerts-state}
   kafka:
     enabled: true

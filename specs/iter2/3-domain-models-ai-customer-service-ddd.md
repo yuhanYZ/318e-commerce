@@ -1,6 +1,11 @@
 # Domain Models Specification - AI-Customer Service
 
-Evolution from `specs/3-domain-models.md`:
+**Project:** 318e-e-commerce
+**Status:** Final
+**Version:** 2.0
+**Date:** 2026-10-10
+
+Evolution from `specs/iter1/3-domain-models.md` (Iteration 1, archived for history):
 - `ConversationSession` promoted to an aggregate root; `ConversationMessage` remains composed inside it (not an independent aggregate).
 - Implicit status changes made explicit as aggregate behaviors, each emitting its own domain event.
 

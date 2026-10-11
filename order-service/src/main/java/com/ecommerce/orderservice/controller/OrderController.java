@@ -1,6 +1,7 @@
 package com.ecommerce.orderservice.controller;
 
 import com.ecommerce.orderservice.dto.CreateOrderRequest;
+import com.ecommerce.orderservice.dto.OrderAnalyticsResponse;
 import com.ecommerce.orderservice.dto.OrderPageResponse;
 import com.ecommerce.orderservice.dto.OrderResponse;
 import com.ecommerce.orderservice.service.OrderCommandService;
@@ -41,6 +42,12 @@ public class OrderController {
                                            @RequestParam(defaultValue = "0") int page,
                                            @RequestParam(defaultValue = "20") int size) {
         return queryService.listMyOrders(authentication.getName(), page, size);
+    }
+
+    @GetMapping("/analytics/realtime")
+    public OrderAnalyticsResponse getRealtimeOrderAnalytics(
+            @RequestParam(required = false) Integer windowMinutes) {
+        return queryService.getRealtimeAnalytics(windowMinutes);
     }
 
     @GetMapping("/{id}")

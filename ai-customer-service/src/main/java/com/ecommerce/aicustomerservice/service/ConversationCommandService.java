@@ -4,7 +4,8 @@ import com.ecommerce.aicustomerservice.ChatAgent;
 import com.ecommerce.aicustomerservice.domain.ConversationMessage;
 import com.ecommerce.aicustomerservice.domain.ConversationSession;
 import com.ecommerce.aicustomerservice.domain.Sender;
-import com.ecommerce.aicustomerservice.domain.SessionStatus;
+import com.ecommerce.aicustomerservice.domain.SessionId;
+import com.ecommerce.aicustomerservice.domain.UserId;
 import com.ecommerce.aicustomerservice.dto.ChatMessageRequest;
 import com.ecommerce.aicustomerservice.dto.ChatMessageResponse;
 import com.ecommerce.aicustomerservice.dto.SessionStatusResponse;
@@ -19,11 +20,17 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * AI1/AI2 (sendMessage) and AI3 (escalate). Per the user-stories doc's "Session Lifecycle" note:
- * no dedicated create-session endpoint — a session is lazily created on first message for a
- * client-generated UUID sessionId, and a sessionId that exists but belongs to a different user is
- * answered with 404 (never 403), to avoid leaking session existence. A syntactically-invalid
- * sessionId is likewise 404, not 400 — it can never have been a session anyone owns.
+ * Command Application Service for AI-Customer Service — specs/iter2/6-cqrs-command-query.md §3.1.
+ * AI1/AI2 (sendMessage) and AI3 (escalate).
+ *
+ * <p>Per the user-stories doc's "Session Lifecycle" note: no dedicated create-session endpoint — a
+ * session is lazily created on first message for a client-generated UUID sessionId, and a sessionId
+ * that exists but belongs to a different user is answered with 404 (never 403), to avoid leaking
+ * session existence. A syntactically-invalid sessionId is likewise 404, not 400 — it can never have
+ * been a session anyone owns.
+ *
+ * <p>The caller's own bearer token is forwarded to the agent so its order-grounding tool is subject
+ * to Order Service's ownership check (O2) — the agent can only read the caller's own orders.
  */
 @Service
 @Transactional
@@ -31,53 +38,48 @@ public class ConversationCommandService {
 
     private final ConversationSessionRepository sessionRepository;
     private final ChatAgent chatAgent;
+    private final DomainEventPublisher domainEventPublisher;
 
-    public ConversationCommandService(ConversationSessionRepository sessionRepository, ChatAgent chatAgent) {
+    public ConversationCommandService(ConversationSessionRepository sessionRepository,
+                                       ChatAgent chatAgent,
+                                       DomainEventPublisher domainEventPublisher) {
         this.sessionRepository = sessionRepository;
         this.chatAgent = chatAgent;
+        this.domainEventPublisher = domainEventPublisher;
     }
 
-    public ChatMessageResponse sendMessage(String sessionId, String callerId, ChatMessageRequest request) {
-        validateSessionIdFormat(sessionId);
-
-        ConversationSession session = loadForCallerOrCreate(sessionId, callerId);
+    public ChatMessageResponse sendMessage(String sessionId, String callerId, ChatMessageRequest request,
+                                            String bearerToken) {
+        SessionId id = sessionIdOrNotFound(sessionId);
+        ConversationSession session = loadForCallerOrCreate(id, new UserId(callerId));
 
         Instant now = Instant.now();
-        ConversationMessage userMessage = new ConversationMessage(UUID.randomUUID().toString());
-        userMessage.setSession(session);
-        userMessage.setSender(Sender.USER);
-        userMessage.setContent(request.content());
-        userMessage.setCreatedAt(now);
-        session.getMessages().add(userMessage);
+        session.postMessage(Sender.USER, request.content(), null, now);
 
-        // The real implementation (ai.ChatAgentConfig) calls out to GPT-4o-mini via LangChain4j;
-        // the contract test replaces this bean with a deterministic stub. Either way, nothing has
-        // been persisted yet at this point, so a failure here leaves zero partial state.
-        String replyText = chatAgent.reply(sessionId, request.content());
+        // The real implementation (ai.ChatAgentConfig) calls the configured LLM through LangChain4j
+        // with the product/order tools bound to this caller's token; the contract test replaces this
+        // bean with a deterministic stub. Either way nothing has been persisted yet at this point —
+        // the aggregate only holds the user message in memory — so a failure here leaves zero
+        // partial state.
+        String replyText = chatAgent.reply(id.value(), request.content(), bearerToken);
 
-        ConversationMessage aiMessage = new ConversationMessage(UUID.randomUUID().toString());
-        aiMessage.setSession(session);
-        aiMessage.setSender(Sender.AI);
-        aiMessage.setContent(replyText);
-        aiMessage.setCreatedAt(Instant.now());
-        session.getMessages().add(aiMessage);
+        ConversationMessage aiMessage = session.postMessage(Sender.AI, replyText, null, Instant.now());
 
-        session.setUpdatedAt(Instant.now());
         sessionRepository.save(session);
-
+        domainEventPublisher.publish(session.pullDomainEvents());
         return ConversationMapper.toChatResponse(aiMessage);
     }
 
     public SessionStatusResponse escalate(String sessionId, String callerId) {
-        validateSessionIdFormat(sessionId);
+        SessionId id = sessionIdOrNotFound(sessionId);
+        ConversationSession session = requireOwnedSession(id, new UserId(callerId));
 
-        ConversationSession session = requireOwnedSession(sessionId, callerId);
-
-        session.setStatus(SessionStatus.ESCALATED);
-        session.setUpdatedAt(Instant.now());
+        session.escalate(Instant.now());
         sessionRepository.save(session);
+        domainEventPublisher.publish(session.pullDomainEvents());
 
-        return new SessionStatusResponse(session.getId(), session.getStatus().name(), session.getUpdatedAt());
+        return new SessionStatusResponse(session.getId().value(), session.getStatus().name(),
+                session.getUpdatedAt());
     }
 
     /**
@@ -85,10 +87,10 @@ public class ConversationCommandService {
      * belongs to someone else" (404 — must NOT fall through to creation, or {@code save()} would
      * merge/overwrite the existing row's owner since the id already exists).
      */
-    private ConversationSession loadForCallerOrCreate(String sessionId, String callerId) {
-        Optional<ConversationSession> existing = sessionRepository.findById(sessionId);
+    private ConversationSession loadForCallerOrCreate(SessionId id, UserId callerId) {
+        Optional<ConversationSession> existing = sessionRepository.findById(id);
         if (existing.isEmpty()) {
-            return startNewSession(sessionId, callerId);
+            return ConversationSession.start(id, callerId, Instant.now());
         }
         ConversationSession session = existing.get();
         if (!session.getUserId().equals(callerId)) {
@@ -97,9 +99,9 @@ public class ConversationCommandService {
         return session;
     }
 
-    /** 404 if missing, and 404 (never 403) if it belongs to someone else — avoids leaking session existence. */
-    private ConversationSession requireOwnedSession(String sessionId, String callerId) {
-        ConversationSession session = sessionRepository.findById(sessionId)
+    /** 404 if missing, and 404 (never 403) if it belongs to someone else — avoids leaking existence. */
+    private ConversationSession requireOwnedSession(SessionId id, UserId callerId) {
+        ConversationSession session = sessionRepository.findById(id)
                 .orElseThrow(ConversationCommandService::sessionNotFound);
         if (!session.getUserId().equals(callerId)) {
             throw sessionNotFound();
@@ -107,19 +109,10 @@ public class ConversationCommandService {
         return session;
     }
 
-    private ConversationSession startNewSession(String sessionId, String callerId) {
-        ConversationSession session = new ConversationSession(sessionId);
-        session.setUserId(callerId);
-        session.setStatus(SessionStatus.ACTIVE);
-        Instant now = Instant.now();
-        session.setCreatedAt(now);
-        session.setUpdatedAt(now);
-        return session;
-    }
-
-    private void validateSessionIdFormat(String sessionId) {
+    private static SessionId sessionIdOrNotFound(String sessionId) {
         try {
             UUID.fromString(sessionId);
+            return new SessionId(sessionId);
         } catch (IllegalArgumentException ex) {
             throw sessionNotFound();
         }

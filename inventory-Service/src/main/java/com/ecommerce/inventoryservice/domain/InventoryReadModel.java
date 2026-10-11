@@ -1,8 +1,9 @@
 package com.ecommerce.inventoryservice.domain;
 
+import jakarta.persistence.AttributeOverride;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.Id;
+import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Table;
 
 import java.time.Instant;
@@ -16,9 +17,9 @@ import java.time.Instant;
 @Table(name = "inventory_read_model")
 public class InventoryReadModel {
 
-    @Id
-    @Column(name = "product_id")
-    private String productId;
+    @EmbeddedId
+    @AttributeOverride(name = "value", column = @Column(name = "product_id", nullable = false))
+    private ProductId productId;
 
     @Column(name = "quantity_available", nullable = false)
     private int quantityAvailable;
@@ -33,14 +34,14 @@ public class InventoryReadModel {
         // JPA
     }
 
-    public InventoryReadModel(String productId, int quantityAvailable, long version, Instant updatedAt) {
+    public InventoryReadModel(ProductId productId, int quantityAvailable, long version, Instant updatedAt) {
         this.productId = productId;
         this.quantityAvailable = quantityAvailable;
         this.version = version;
         this.updatedAt = updatedAt;
     }
 
-    public String getProductId() {
+    public ProductId getProductId() {
         return productId;
     }
 

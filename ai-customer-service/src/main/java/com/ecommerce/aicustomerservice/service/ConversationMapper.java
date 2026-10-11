@@ -6,6 +6,7 @@ import com.ecommerce.aicustomerservice.dto.ChatMessageResponse;
 import com.ecommerce.aicustomerservice.dto.MessageLogEntry;
 import com.ecommerce.aicustomerservice.dto.SessionSummaryResponse;
 
+/** Maps the aggregate onto the API contract's DTOs — specs/iter2/openapi-contract-v2.yaml. */
 final class ConversationMapper {
 
     private ConversationMapper() {
@@ -13,7 +14,7 @@ final class ConversationMapper {
 
     static ChatMessageResponse toChatResponse(ConversationMessage message) {
         return new ChatMessageResponse(
-                message.getSession().getId(),
+                message.getSession().getId().value(),
                 message.getId(),
                 message.getSender().name(),
                 message.getContent(),
@@ -22,8 +23,8 @@ final class ConversationMapper {
 
     static SessionSummaryResponse toSummary(ConversationSession session) {
         return new SessionSummaryResponse(
-                session.getId(),
-                session.getUserId(),
+                session.getId().value(),
+                session.getUserId().value(),
                 session.getStatus().name(),
                 session.getCreatedAt(),
                 session.getUpdatedAt());
