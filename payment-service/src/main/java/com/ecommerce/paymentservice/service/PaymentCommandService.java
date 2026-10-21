@@ -93,6 +93,20 @@ public class PaymentCommandService {
                     "Payment amount must equal the order's total amount");
         }
 
+        // Invariant 4 (3-domain-models-payment-service-ddd.md §2.3.1): at most one non-FAILED
+        // payment per order. Checking the order's status is NOT enough on its own — the order only
+        // leaves PENDING once Order Service has consumed payment.confirmed, so during that window
+        // (and for as long as the "kafka" profile is inactive, when the transition never happens at
+        // all) a second payForOrder would otherwise create a duplicate SUCCESS payment, i.e. charge
+        // the customer twice. A previous FAILED attempt is deliberately not counted, so the
+        // invariant's "non-FAILED" wording is preserved: repeated failed attempts stay possible.
+        Payment existingPayment = paymentRepository
+                .findFirstByOrderIdOrderByCreatedAtDesc(new OrderId(request.orderId()))
+                .orElse(null);
+        if (existingPayment != null && existingPayment.getStatus() != PaymentStatus.FAILED) {
+            throw paymentStateViolation("This order already has a payment");
+        }
+
         Money amount = new Money(request.amount().amount(), request.amount().currency());
         Instant now = Instant.now();
         Payment payment = Payment.initiate(new PaymentId("PAY-" + shortId()), new OrderId(request.orderId()),

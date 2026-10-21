@@ -7,9 +7,9 @@ CSCI318 capstone: an event-driven e-commerce backend built as six Spring Boot mi
 | Service | Port | Responsibility |
 | :--- | :--- | :--- |
 | `user-service` | 8081 | Registration, login (JWT), profile, password reset; seeds the single Admin account |
-| `product-service` | 8082 | Catalog browsing/search, admin product management |
+| `product-service` | 8082 | Catalog browsing/search, admin product management; seeds a fixed six-product demo catalog |
 | `order-service` | 8083 | Place/cancel/query orders, real-time order analytics (Admin) |
-| `inventory-Service` | 8084 | Stock queries and adjustments (event-sourced), low-stock alerts |
+| `inventory-Service` | 8084 | Stock queries and adjustments (event-sourced), low-stock alerts; seeds 25 units for each demo product |
 | `payment-service` | 8085 | Mock payment processing, refunds, transaction list (Admin) |
 | `ai-customer-service` | 8086 | LangChain4j chat agent (DeepSeek/OpenAI-compatible) with product/order tools |
 
@@ -75,7 +75,7 @@ Two steps need input from you: folder 5 needs `resetToken` (read it from the H2 
 ## Gotchas
 
 - **Mock payment failure hook:** `payment-service` deterministically fails any payment whose amount has a fractional part of exactly `.99` (`app.payment.mock-failure-fraction`). Avoid `x.99` totals in tests unless you want to exercise the failure path.
-- All data is in-memory H2; restarting a service resets its data (the Admin account is re-seeded on startup).
+- All data is in-memory H2; restarting a service resets its data. The Admin account, Product Service's fixed six-product demo catalog, and Inventory Service's 25-unit stock for each demo product are re-seeded on startup.
 - Order ownership is enforced per user, so even the Admin cannot read a customer's order by ID.
 - **Start Kafka before the services.** `order-service`, `inventory-Service` and `payment-service` must reach the broker while booting — wait for `docker ps` to report `318-kafka` as `healthy` first.
 - **Kafka Streams state directories.** Both stream-processing topologies (`order-analytics` for O6, `inventory-alerts` for I4) keep a RocksDB state directory under the JVM temp directory — `order-analytics-state` and `inventory-alerts-state` (override with `ORDER_ANALYTICS_STATE_DIR` / `INVENTORY_ALERTS_STATE_DIR`). If that directory is left behind by an abrupt kill (IntelliJ's Stop) **or the broker is recreated** (`docker compose down -v`, which wipes the Kafka volume), the topology can fail to start **silently**: the consumer group never appears, no analytics rows are written, no alert is ever raised, and the API keeps answering `200`. Symptom check: `docker exec 318-kafka kafka-consumer-groups --bootstrap-server localhost:9092 --describe --group order-analytics` (or `--group inventory-alerts`) prints `has no active members`. Fix: delete both directories and restart the two services — the state is rebuilt from the topics.

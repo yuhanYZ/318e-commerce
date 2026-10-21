@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SHOPFLOW · 318 E-Commerce Demo</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="chat.css" />
+  </head>
+  <body>
+    <aside class="sidebar">
+      <a class="brand" href="#"><span class="brand-mark">S</span><span>SHOPFLOW<small>commerce platform</small></span></a>
+      <nav>
+        <button class="nav-item active" data-page="store"><span>⌂</span>Store</button>
+        <button class="nav-item" data-page="orders"><span>▣</span>My Orders</button>
+        <button class="nav-item" data-page="dashboard"><span>◔</span>Operations</button>
+        <button class="nav-item" data-page="inventory"><span>▤</span>Inventory</button>
+      </nav>
+      <div class="sidebar-bottom"><div class="avatar">YL</div><div><strong>Yuhan Liu</strong><small>Administrator</small></div><span class="dots">•••</span></div>
+    </aside>
+
+    <main>
+      <header><div><p class="eyebrow" id="section-kicker">SHOPPING EXPERIENCE · LIVE API</p><h1 id="page-title">Find your next favorite</h1></div><div class="header-actions"><button class="cart-button" id="login-open">Sign in</button><button class="icon-btn" title="Notifications">♧<i></i></button><button class="cart-button" id="cart-open">Cart <span id="cart-count">0</span></button></div></header>
+
+      <section class="page active" id="store-page">
+        <div class="hero"><div><span class="tag">NEW SEASON · 2026</span><h2>Great design,<br />right on time.</h2><p>Make everyday life feel a little more effortless.</p><button class="primary" id="hero-browse">Explore products <span>→</span></button></div><div class="hero-art"><div class="orb orb-one"></div><div class="orb orb-two"></div><div class="chair">◒</div></div></div>
+        <div class="catalog-head"><div><h2>Product catalog</h2><p id="catalog-status">Loading products from Product Service…</p></div><div class="filters"><button class="filter selected" id="reload-products">Refresh</button></div></div>
+        <div class="products" id="products"></div>
+      </section>
+
+      <section class="page" id="orders-page"><div class="page-intro"><h2>Order center</h2><p>Track transactions coordinated by the order, payment, and inventory services.</p></div><div class="order-list" id="order-list"></div></section>
+
+      <section class="page" id="dashboard-page"><div class="page-intro dashboard-title"><div><h2>Live operations</h2><p>Kafka event-stream view · last 30 minutes</p></div><span class="live-dot">LIVE</span></div><div class="metrics"><article><span>Orders</span><strong id="metric-orders">—</strong><em>Waiting to load</em></article><article><span>Revenue (AUD)</span><strong id="metric-revenue">—</strong><em>AUD</em></article><article><span>Average order value</span><strong>—</strong><em>Order Analytics</em></article><article><span>Open alerts</span><strong class="warning">—</strong><em class="neutral">Inventory Alerts</em></article></div><div class="dashboard-grid"><article class="chart-card"><div class="card-title"><div><h3>Live order aggregation</h3><p>From GET /orders/analytics/realtime</p></div><button>Refresh</button></div><div class="chart"><div class="y-labels"><span>Revenue</span><span>Average</span><span>Orders</span></div><svg viewBox="0 0 700 220" preserveAspectRatio="none" aria-label="Live business metrics"><path d="M0,183 L230,138 L460,86 L700,42" fill="none" stroke="#6956e8" stroke-width="4"/></svg><div class="x-labels"><span>Window start</span><span>Aggregating</span><span>Current</span></div></div></article><article class="events-card"><div class="card-title"><div><h3>API events</h3><p>Real responses from this page session</p></div><span class="stream">● API</span></div><div class="events" id="events"></div></article></div></section>
+
+      <section class="page" id="inventory-page"><div class="page-intro"><h2>Inventory center</h2><p>Stock read models and low-stock alerts are updated asynchronously by event streams.</p></div><div class="inventory-note"><span>⚡</span><div><strong>Live inventory read model</strong><p>Inventory and alert counts are returned by Inventory Service when the page opens.</p></div><button disabled>Admin adjustment</button></div><div class="stock-table"><div class="table-head"><span>Product</span><span>SKU</span><span>Available</span><span>Status</span><span></span></div><div id="stock-list"></div></div></section>
+    </main>
+
+    <aside class="cart-panel" id="cart-panel"><div class="panel-title"><h2>Your cart</h2><button class="close" id="cart-close">×</button></div><div id="cart-items" class="cart-items"><p class="empty">Your cart is empty<br /><small>Add an item to start checkout</small></p></div><div class="cart-footer"><div><span>Total</span><strong id="cart-total">$0.00</strong></div><button class="primary full" id="checkout" disabled>Secure checkout <span>→</span></button></div></aside><div class="overlay" id="overlay"></div>
+    <button class="ai-button" id="ai-open"><span>✦</span><i>AI Support</i></button><section class="ai-chat" id="ai-chat"><div class="chat-top"><div><span class="ai-avatar">✦</span><strong>SHOPFLOW Assistant<small id="ai-status">Sign in to connect AI Service</small></strong></div><button class="close" id="ai-close">×</button></div><div class="chat-login" id="chat-login"><h3>Connect AI Support</h3><p>Sign in with your store account. Messages are sent to the local AI Customer Service.</p><form id="login-form"><label>Email<input id="login-email" type="email" placeholder="your@email.com" required /></label><label>Password<input id="login-password" type="password" placeholder="Enter password" required /></label><button class="primary full" type="submit">Sign in and connect <span>→</span></button><small id="login-error"></small></form></div><div class="chat-content" id="chat-content"><div class="messages" id="messages"><div class="message bot">Connected to AI Customer Service. Ask about products, orders, or returns.<small>Now</small></div></div><div class="quick-prompts"><button>When will my order arrive?</button><button>Recommend a desk accessory</button></div><form id="chat-form"><input id="chat-input" placeholder="Ask a question…" autocomplete="off" /><button>↑</button></form></div></section>
+    <div class="toast" id="toast"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

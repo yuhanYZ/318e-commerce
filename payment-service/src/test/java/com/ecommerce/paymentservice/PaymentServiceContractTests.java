@@ -156,6 +156,63 @@ class PaymentServiceContractTests {
                 .andExpect(jsonPath("$.code").value("PaymentStateViolation"));
     }
 
+    /**
+     * Invariant 4 (3-domain-models-payment-service-ddd.md §2.3.1): at most one non-FAILED payment
+     * per order.
+     *
+     * <p>The order is deliberately still PENDING for both calls, because that is the state the
+     * second attempt sees in real life: Order Service only moves the order to PAID once it has
+     * consumed payment.confirmed, so the order-status check alone cannot stop a double charge — and
+     * with the "kafka" profile inactive that transition never happens at all. Only this service's
+     * own payment-existence pre-check can reject the second attempt.
+     */
+    @Test
+    void payForOrder_orderAlreadyHasASuccessPayment_returns409PaymentStateViolation() throws Exception {
+        String orderId = "ORD-" + UUID.randomUUID();
+        stubOrder(orderId, "PENDING", 88.00);
+        String userToken = token("USR-BUYER-12", "CUSTOMER");
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 88.00)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("SUCCESS"));
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 88.00)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PaymentStateViolation"));
+    }
+
+    /**
+     * The other half of invariant 4: it caps non-FAILED payments, so a FAILED attempt does not
+     * count and a retry must not be turned into a 409. Attempts against a {@code .99} total always
+     * fail in the mock gateway, which makes both calls deterministically FAILED.
+     */
+    @Test
+    void payForOrder_retryAfterAFailedAttempt_stillReturns201Failed() throws Exception {
+        String orderId = "ORD-" + UUID.randomUUID();
+        stubOrder(orderId, "PENDING", 5.99);
+        String userToken = token("USR-BUYER-13", "CUSTOMER");
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 5.99)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+
+        mockMvc.perform(post("/api/v1/payments")
+                        .header("Authorization", "Bearer " + userToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payBody(orderId, 5.99)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.status").value("FAILED"));
+    }
+
     @Test
     void payForOrder_noToken_returns401() throws Exception {
         mockMvc.perform(post("/api/v1/payments")
